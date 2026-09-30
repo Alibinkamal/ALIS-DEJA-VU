@@ -95,7 +95,7 @@ class MainWindow(QMainWindow):
             for name,lo,hi in items:
                 row=QHBoxLayout();row.addWidget(QLabel(name.title()));sl=QSlider(Qt.Horizontal);sl.setRange(0,1000);sl.setValue(500 if lo<0 else 0);sl.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self._set_pro(n,a+(b-a)*v/1000));row.addWidget(sl);val=QLabel("0");val.setFixedWidth(42);row.addWidget(val);self.pro_sliders[name]=(sl,val,lo,hi);bl.addLayout(row)
             il.addWidget(box)
-        advanced=QPushButton("RGB Curves • HSL • Color Balance • LUT");advanced.clicked.connect(self.curves_dialog);il.addWidget(advanced);il.addStretch();scroll.setWidget(inner);lay.addWidget(scroll,1);self.stack.addWidget(page)
+        advanced=QPushButton("RGB Curves • HSL • Color Balance • LUT");advanced.clicked.connect(self.curves_dialog);il.addWidget(advanced);il.addStretch();scroll.setWidget(inner);lay.addWidget(scroll,1);self.stack.addWidget(page);self.adjust_sliders={k:v[0] for k,v in self.pro_sliders.items() if k in self.adjustments}
 
     def _build_retouch_page(self):
         page,lay=self._page("RETOUCH & DETAIL")
