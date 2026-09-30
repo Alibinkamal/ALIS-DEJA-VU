@@ -461,10 +461,7 @@ class MainWindow(QMainWindow):
             with zipfile.ZipFile(p) as z:manifest=json.loads(z.read("manifest.json").decode("utf-8"))
             original=Path(manifest["original_path"])
             if not original.exists():
-                QMessageBox.warning(self,"Original image missing",f"The project references:
-{original}
-
-Move the original image back to this path before opening the project.")
+                QMessageBox.warning(self,"Original image missing",f"The project references:\n{original}\n\nMove the original image back to this path before opening the project.")
                 return
             self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,LayerStack,Mask,BlendMode);self.adjustments.update(manifest.get("adjustments",{}));self.advanced.update(manifest.get("metadata",{}).get("advanced",{}));self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}")
         except Exception as e:self.logger.exception("Project open failed");QMessageBox.critical(self,"Open Project failed",str(e))
