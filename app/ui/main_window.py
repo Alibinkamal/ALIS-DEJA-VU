@@ -84,6 +84,8 @@ class MainWindow(QMainWindow):
   if self.layers:self.layers.active.blend_mode=BlendMode(text);self.render()
  def set_layer_opacity(self,v):
   if self.layers:self.layers.active.opacity=v/100.;self.render()
+ def set_adjustment(self,name,value):
+  self.adjustments[name]=float(value);self.render()
  def canvas_to_image(self,x,y):
   if not self.layers:return None
   h,w=self.layers.active.pixels.shape[:2];z=self.canvas.zoom;px=(x-(self.canvas.width()-w*z)/2-self.canvas.pan[0])/z;py=(y-(self.canvas.height()-h*z)/2-self.canvas.pan[1])/z
