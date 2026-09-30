@@ -2,12 +2,13 @@ from pathlib import Path
 import copy
 import numpy as np
 from PySide6.QtWidgets import QDialog,QFormLayout,QDialogButtonBox,QDoubleSpinBox,QSpinBox,QCheckBox,QComboBox,QInputDialog,QMessageBox,QFileDialog,QPushButton,QVBoxLayout,QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,QRectF
+from PySide6.QtGui import QImage,QPainter,QFont,QColor
 from app.ui.main_window import MainWindow
 from app.core.layers import BlendMode
 from app.core.masks import Mask
 from app.ui.widgets import TextOverlay
-from app.export import export_image
+from app.export import export_image\nfrom app.project import ProjectFile\nfrom app.image import ImageData\nfrom app.utils import get_logger
 from app.processing.pro_tools import color_wheels,apply_vignette,bloom,halation,tone_curve,linear_gradient_mask,radial_mask,crop_array,transform_array
 
 class ProMainWindow(MainWindow):
@@ -178,9 +179,54 @@ class ProMainWindow(MainWindow):
         box=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);box.accepted.connect(d.accept);box.rejected.connect(d.reject);form.addRow(box)
         if d.exec():self.preview_max_side=side.value();self.info.setText(f"Preview target set to {self.preview_max_side}px.")
 
+    def _render_text_overlays(self,image):
+        if not self.text_overlays:return image
+        arr=np.ascontiguousarray(np.clip(image*255,0,255).astype(np.uint8));h,w=arr.shape[:2]
+        q=QImage(arr.data,w,h,w*3,QImage.Format_RGB888).copy();p=QPainter(q);p.setRenderHint(QPainter.Antialiasing)
+        for ov in self.text_overlays:
+            font=QFont(ov.font_family,int(ov.size));font.setBold(bool(ov.bold));font.setItalic(bool(ov.italic));p.setFont(font)
+            rect=QRectF(0,ov.y*h-ov.size*1.2,w,ov.size*2.4);p.save();p.translate(ov.x*w,ov.y*h);p.rotate(float(getattr(ov,"rotation",0)));p.translate(-ov.x*w,-ov.y*h)
+            if getattr(ov,"shadow",False):
+                p.setPen(QColor(0,0,0,150));p.drawText(rect.translated(4,4),Qt.AlignCenter,ov.text)
+            sw=int(getattr(ov,"stroke_width",0))
+            if sw>0:
+                p.setPen(QColor(getattr(ov,"stroke_color","#000000")));p.drawText(rect,Qt.AlignCenter,ov.text)
+            col=QColor(ov.color);col.setAlphaF(max(0,min(1,float(ov.opacity))));p.setPen(col);p.drawText(rect,Qt.AlignCenter,ov.text);p.restore()
+        p.end();bits=q.bits();out=np.frombuffer(bits,np.uint8).reshape((h,q.bytesPerLine()//3,3))[:,:w,:].copy();return out.astype(np.float32)/255.
+
     def save_project(self):
-        # Extend the base project's metadata without changing the native format.
-        return super().save_project()
+        if not self.layers or not self.image_data:return
+        p,_=QFileDialog.getSaveFileName(self,"Save Project","", "ALIS DEJA VU Project (*.alis)")
+        if not p:return
+        try:
+            temp=copy.deepcopy(self.layers);temp.layers[0].pixels=self.image_data.original_image.copy()
+            texts=[]
+            for o in self.text_overlays:
+                texts.append({k:getattr(o,k) for k in ("text","font_family","size","bold","italic","color","x","y","opacity")}|{"rotation":getattr(o,"rotation",0),"stroke_width":getattr(o,"stroke_width",0),"stroke_color":getattr(o,"stroke_color","#000000"),"shadow":getattr(o,"shadow",False)})
+            metadata={"app_version":APP_VERSION,"advanced":self.advanced,"pro_grade":self.pro_grade,"pro_effects":self.pro_effects,"text_overlays":texts}
+            ProjectFile.save(p,self.image_data.file_path,self.adjustments,temp,metadata)
+            self.statusBar().showMessage(f"Project saved: {Path(p).name}")
+        except Exception as e:
+            self.logger.exception("Project save failed");QMessageBox.critical(self,"Save Project failed",str(e))
 
     def open_project(self):
-        return super().open_project()
+        p,_=QFileDialog.getOpenFileName(self,"Open Project","", "ALIS DEJA VU Project (*.alis)")
+        if not p:return
+        try:
+            import json,zipfile
+            with zipfile.ZipFile(p) as z:manifest=json.loads(z.read("manifest.json").decode("utf-8"))
+            original=Path(manifest["original_path"])
+            if not original.exists():
+                QMessageBox.warning(self,"Original image missing",f"The project references:\n{original}\n\nMove the original image back to this path before opening the project.");return
+            self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,type(self.layers),Mask,BlendMode)
+            self.adjustments.update(manifest.get("adjustments",{}));meta=manifest.get("metadata",{});self.advanced.update(meta.get("advanced",{}));self.pro_grade.update(meta.get("pro_grade",{}));self.pro_effects.update(meta.get("pro_effects",{}))
+            self.text_overlays=[]
+            for d in meta.get("text_overlays",[]):
+                o=TextOverlay(d.get("text",""),d.get("font_family","Segoe UI"),d.get("size",64),d.get("bold",False),d.get("italic",False),d.get("color","#FFFFFF"),d.get("x",.5),d.get("y",.5),d.get("opacity",1.0))
+                for k in ("rotation","stroke_width","stroke_color","shadow"):
+                    if k in d:setattr(o,k,d[k])
+                self.text_overlays.append(o)
+            self.canvas.text_overlays=self.text_overlays;self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}")
+        except Exception as e:
+            QMessageBox.critical(self,"Open Project failed",str(e))
+\n
