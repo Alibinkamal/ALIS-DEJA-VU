@@ -56,3 +56,10 @@ def proxy(image,max_side=1600):
     h,w=image.shape[:2];scale=min(1,float(max_side)/max(h,w))
     if scale>=1:return image.copy()
     return cv2.resize(image,(max(1,round(w*scale)),max(1,round(h*scale))),interpolation=cv2.INTER_AREA).astype(np.float32)
+
+
+def perspective_warp(image, top_left=(0,0), top_right=(1,0), bottom_right=(1,1), bottom_left=(0,1)):
+    h,w=image.shape[:2]; src=np.float32([[0,0],[w-1,0],[w-1,h-1],[0,h-1]])
+    dst=np.float32([[float(top_left[0])*w,float(top_left[1])*h],[float(top_right[0])*w,float(top_right[1])*h],[float(bottom_right[0])*w,float(bottom_right[1])*h],[float(bottom_left[0])*w,float(bottom_left[1])*h]])
+    M=cv2.getPerspectiveTransform(src,dst); out=cv2.warpPerspective(np.asarray(image,np.float32),M,(w,h),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REFLECT)
+    return np.clip(out,0,1).astype(np.float32)
