@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QInputDialog,QDialog,QFormLayout,QDialogButtonBox,QSpinBox,QDoubleSpinBox,QCheckBox,QTextEdit,QFontComboBox,QColorDialog
 )
 from PySide6.QtGui import QKeySequence,QAction,QIcon,QFont,QColor
-from PySide6.QtCore import Qt,QThreadPool
+from PySide6.QtCore import Qt,QThreadPool,QRectF
 from shiboken6 import isValid
 from app import APP_NAME,APP_VERSION
 from app.core import ImageData,LayerStack,UndoRedoManager,CallableCommand
@@ -222,9 +222,20 @@ class MainWindow(QMainWindow):
         if a["lut"] and Path(a["lut"]).exists():out=apply_cube_lut(out,a["lut"])
         return np.clip(out,0,1).astype(np.float32)
 
+    def _render_text_overlays(self,image):
+        if not self.text_overlays:return image
+        arr=np.ascontiguousarray(np.clip(image*255,0,255).astype(np.uint8))
+        h,w=arr.shape[:2];q=QImage(arr.data,w,h,w*3,QImage.Format_RGB888);q=q.copy();p=QPainter(q);p.setRenderHint(QPainter.Antialiasing)
+        for ov in self.text_overlays:
+            font=QFont(ov.font_family,ov.size);font.setBold(ov.bold);font.setItalic(ov.italic);p.setFont(font);c=QColor(ov.color);c.setAlphaF(max(0,min(1,ov.opacity)));p.setPen(c)
+            rect=QRectF(0,ov.y*h-ov.size*1.2,w,ov.size*2.4);flags=Qt.AlignCenter
+            if any("\u0600"<=ch<="\u06FF" for ch in ov.text):flags|=Qt.TextDirectionFlag(Qt.RightToLeft)
+            p.drawText(rect,flags,ov.text)
+        p.end();bits=q.bits();out=np.frombuffer(bits,np.uint8).reshape((h,q.bytesPerLine()//3,3))[:,:w,:].copy();return out.astype(np.float32)/255.0
+
     def render(self):
         if not self.layers:return
-        base=self._apply_pipeline(self.image_data.original_image.copy());self.layers.layers[0].pixels=base
+        base=self._apply_pipeline(self.image_data.original_image.copy());base=self._render_text_overlays(base);self.layers.layers[0].pixels=base
         out=self.layers.composite();self.canvas.set_image(out,self.image_data.original_image)
         mean=float(np.mean(out));clip=float(np.mean((out<=.001)|(out>=.999))*100);self.histogram_label.setText(f"Histogram • mean {mean:.3f} • clipped {clip:.1f}% • {out.shape[1]}×{out.shape[0]}")
 
