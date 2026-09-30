@@ -12,7 +12,7 @@ from app.core.masks import Mask
 from app.ui.widgets import TextOverlay
 from app.export import export_image
 from app.project import ProjectFile
-from app.image import ImageData
+from app.core import ImageData
 from app.utils import get_logger
 from app.processing.pro_tools import color_wheels,apply_vignette,bloom,halation,tone_curve,linear_gradient_mask,radial_mask,crop_array,transform_array,perspective_warp,lens_correction
 from app.retouch.beauty import teeth_whiten,eye_enhance,lip_tint,hair_detail,contour_light
