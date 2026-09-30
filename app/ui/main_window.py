@@ -4,9 +4,9 @@ import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFileDialog,QMessageBox,
     QListWidget,QListWidgetItem,QPushButton,QLabel,QComboBox,QSlider,QApplication,QFrame,QToolButton,QScrollArea,QGridLayout,QLineEdit,QStackedWidget,QButtonGroup,QSizePolicy,
-    QInputDialog,QDialog,QFormLayout,QDialogButtonBox,QSpinBox,QDoubleSpinBox,QCheckBox
+    QInputDialog,QDialog,QFormLayout,QDialogButtonBox,QSpinBox,QDoubleSpinBox,QCheckBox,QTextEdit,QFontComboBox,QColorDialog
 )
-from PySide6.QtGui import QKeySequence,QAction,QIcon
+from PySide6.QtGui import QKeySequence,QAction,QIcon,QFont,QColor
 from PySide6.QtCore import Qt,QThreadPool
 from shiboken6 import isValid
 from app import APP_NAME,APP_VERSION
@@ -27,7 +27,7 @@ from app.export import export_image
 from app.performance import PreviewCache
 from app.ui.filter_library import LOOKS,CATEGORIES,get_look
 from app.utils import AppSettings,get_logger
-from app.ui.widgets import ImageCanvas,LookCard
+from app.ui.widgets import ImageCanvas,LookCard,TextOverlay
 from app.ui.theme import StyleSheet,Colors
 
 class MainWindow(QMainWindow):
@@ -42,7 +42,7 @@ class MainWindow(QMainWindow):
         self.adjustments={"exposure":0.,"brightness":0.,"contrast":0.,"highlights":0.,"shadows":0.,"saturation":0.,"temperature":0.,"tint":0.,"vibrance":0.}
         self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
         self.active_look=None;self.look_intensity=1.0
-        self.pro_controls={"whites":0.0,"blacks":0.0,"clarity":0.0,"texture":0.0,"dehaze":0.0,"vignette":0.0,"grain":0.0}
+        self.pro_controls={"whites":0.0,"blacks":0.0,"clarity":0.0,"texture":0.0,"dehaze":0.0,"vignette":0.0,"grain":0.0};self.text_overlays=[];self.text_color="#FFFFFF"
         self._build();self._menus()
 
     def _build(self):
@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
         top=QFrame();top.setObjectName("TopBar");tl=QHBoxLayout(top);tl.setContentsMargins(14,8,14,8)
         brand=QLabel("ALIS DEJA VU");brand.setObjectName("Brand");tl.addWidget(brand);ver=QLabel(f"  v{APP_VERSION}");ver.setObjectName("Subtle");tl.addWidget(ver);tl.addStretch()
         self.nav_group=QButtonGroup(self);self.nav_group.setExclusive(True)
-        for name,label in [("looks","LOOKS"),("adjust","ADJUST"),("retouch","RETOUCH"),("layers","LAYERS")]:
+        for name,label in [("looks","LOOKS"),("adjust","ADJUST"),("retouch","RETOUCH"),("text","TEXT"),("layers","LAYERS")]:
             b=QToolButton();b.setObjectName("Nav");b.setText(label);b.setCheckable(True);b.clicked.connect(lambda checked,n=name:self.switch_section(n));self.nav_group.addButton(b);tl.addWidget(b);setattr(self,name+"_nav",b)
         self.looks_nav.setChecked(True);outer.addWidget(top)
         body=QHBoxLayout();body.setContentsMargins(0,0,0,0);body.setSpacing(8);outer.addLayout(body,1)
@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
             b=QPushButton(text);b.clicked.connect(fn);bottom.addWidget(b)
         bottom.addStretch();self.status_hint=QLabel("Ready");self.status_hint.setObjectName("Subtle");bottom.addWidget(self.status_hint);cl.addLayout(bottom);body.addWidget(center,1)
         self.stack=QStackedWidget();self.stack.setObjectName("Inspector");self.stack.setFixedWidth(390);body.addWidget(self.stack)
-        self._build_looks_page();self._build_adjust_page();self._build_retouch_page();self._build_layers_page()
+        self._build_looks_page();self._build_adjust_page();self._build_retouch_page();self._build_text_page();self._build_layers_page()
         self.statusBar().showMessage("Ready — open an image to begin");self.setStyleSheet(StyleSheet.get_stylesheet())
 
     def _page(self,title):
@@ -103,13 +103,37 @@ class MainWindow(QMainWindow):
             b=QPushButton(label);b.clicked.connect(fn);lay.addWidget(b)
         lay.addWidget(QLabel("Brush Size"));self.size=QSlider(Qt.Horizontal,page);self.size.setRange(2,400);self.size.setValue(40);self.size.valueChanged.connect(lambda v:setattr(self,"brush_size",v));lay.addWidget(self.size);lay.addWidget(QLabel("Opacity / Flow"));self.opacity=QSlider(Qt.Horizontal,page);self.opacity.setRange(1,100);self.opacity.setValue(100);self.opacity.valueChanged.connect(lambda v:setattr(self,"brush_opacity",v/100));lay.addWidget(self.opacity);b=QPushButton("Invert Active Mask");b.clicked.connect(self.invert_mask);lay.addWidget(b);lay.addStretch();self.stack.addWidget(page)
 
+
+    def _build_text_page(self):
+        page,lay=self._page("TEXT & TYPOGRAPHY")
+        lay.addWidget(QLabel("English + Arabic • Unicode / RTL supported"))
+        self.text_edit=QTextEdit();self.text_edit.setPlaceholderText("Type English or العربية هنا…");self.text_edit.setMinimumHeight(120);lay.addWidget(self.text_edit)
+        row=QHBoxLayout();row.addWidget(QLabel("Font"));self.font_combo=QFontComboBox();row.addWidget(self.font_combo,1);lay.addLayout(row)
+        row=QHBoxLayout();row.addWidget(QLabel("Size"));self.text_size_spin=QSpinBox();self.text_size_spin.setRange(8,300);self.text_size_spin.setValue(64);row.addWidget(self.text_size_spin);self.text_bold_cb=QCheckBox("Bold");self.text_italic_cb=QCheckBox("Italic");row.addWidget(self.text_bold_cb);row.addWidget(self.text_italic_cb);lay.addLayout(row)
+        row=QHBoxLayout();self.text_color_btn=QPushButton("Text Color");self.text_color_btn.clicked.connect(self._choose_text_color);row.addWidget(self.text_color_btn);add=QPushButton("＋ Add Text");add.setObjectName("Primary");add.clicked.connect(self._add_text_overlay);row.addWidget(add);lay.addLayout(row)
+        clear=QPushButton("Clear Text Overlays");clear.clicked.connect(self._clear_text_overlays);lay.addWidget(clear)
+        lay.addWidget(QLabel("Uses the system font collection, including Arabic-capable fonts installed on Windows."));lay.addStretch();self.stack.addWidget(page)
+
+    def _choose_text_color(self):
+        c=QColorDialog.getColor(QColor(self.text_color),self,"Text Color")
+        if c.isValid(): self.text_color=c.name();self.text_color_btn.setStyleSheet(f"background:{self.text_color};color:#000;")
+
+    def _add_text_overlay(self):
+        text=self.text_edit.toPlainText().strip()
+        if not text:return
+        ov=TextOverlay(text,self.font_combo.currentFont().family(),self.text_size_spin.value(),self.text_bold_cb.isChecked(),self.text_italic_cb.isChecked(),self.text_color,.5,.5,1.0)
+        self.text_overlays.append(ov);self.canvas.text_overlays=self.text_overlays;self.canvas.update();self.info.setText(f"Text added • {ov.font_family}")
+
+    def _clear_text_overlays(self):
+        self.text_overlays.clear();self.canvas.text_overlays=self.text_overlays;self.canvas.update();self.info.setText("Text overlays cleared")
+
     def _build_layers_page(self):
         page,lay=self._page("LAYERS");self.layer_list=QListWidget();self.layer_list.currentRowChanged.connect(self.select_layer);lay.addWidget(self.layer_list,1);grid=QGridLayout()
         for i,(text,fn) in enumerate([("＋ Layer",self.add_layer),("Duplicate",self.duplicate_layer),("Delete",self.delete_layer),("↑ Up",lambda:self.move_layer(-1)),("↓ Down",lambda:self.move_layer(1)),("Add Mask",self.add_mask)]):
             b=QPushButton(text);b.clicked.connect(fn);grid.addWidget(b,i//2,i%2)
         lay.addLayout(grid);lay.addWidget(QLabel("Blend Mode"));self.blend=QComboBox();self.blend.addItems([x.value for x in BlendMode]);self.blend.currentTextChanged.connect(self.set_blend);lay.addWidget(self.blend);lay.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal,page);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);lay.addWidget(self.layer_opacity);self.histogram_label=QLabel("Histogram • no image");self.histogram_label.setObjectName("Subtle");self.histogram_label.setWordWrap(True);lay.addWidget(self.histogram_label);self.stack.addWidget(page)
 
-    def switch_section(self,name): self.stack.setCurrentIndex({"looks":0,"adjust":1,"retouch":2,"layers":3}[name])
+    def switch_section(self,name): self.stack.setCurrentIndex({"looks":0,"adjust":1,"retouch":2,"text":3,"layers":4}[name])
     def _set_category(self,cat): self.active_category=cat;self._refresh_look_cards()
     def _refresh_look_cards(self):
         while self.look_grid.count():
