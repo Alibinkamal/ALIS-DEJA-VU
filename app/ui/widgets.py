@@ -1,13 +1,17 @@
 import numpy as np
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLabel,QSlider,QDoubleSpinBox,QGroupBox,QFrame
-from PySide6.QtGui import QImage,QPixmap,QPainter,QRadialGradient,QColor
+from PySide6.QtGui import QImage,QPixmap,QPainter,QRadialGradient,QColor,QFont,QPen
 from PySide6.QtCore import Qt,Signal,QPoint,QTimer
 from app.ui.theme import Colors
+
+class TextOverlay:
+    def __init__(self,text,font_family="Segoe UI",size=48,bold=False,italic=False,color="#FFFFFF",x=.5,y=.5,opacity=1.0):
+        self.text=text;self.font_family=font_family;self.size=size;self.bold=bold;self.italic=italic;self.color=color;self.x=x;self.y=y;self.opacity=opacity
 
 class ImageCanvas(QWidget):
     zoom_changed=Signal(float); position_changed=Signal(int,int); stroke=Signal(int,int); file_dropped=Signal(str)
     def __init__(self,parent=None):
-        super().__init__(parent);self.image_data=None;self.original=None;self.zoom=1.;self.pan=[0,0];self.drag=None;self.show_original=False
+        super().__init__(parent);self.image_data=None;self.original=None;self.zoom=1.;self.pan=[0,0];self.drag=None;self.show_original=False;self.text_overlays=[]
         self.setFocusPolicy(Qt.StrongFocus);self.setAcceptDrops(True);self.setStyleSheet(f"background:{Colors.CANVAS_BACKGROUND.name()};");self._pulse=0.0;self._timer=QTimer(self);self._timer.timeout.connect(self._animate);self._timer.start(70)
     def _animate(self):
         self._pulse=(self._pulse+0.006)%6.283;self.update()
@@ -20,6 +24,9 @@ class ImageCanvas(QWidget):
         g=QRadialGradient(self.width()*.18+np.sin(self._pulse)*80,self.height()*.18+np.cos(self._pulse)*50,max(self.width(),self.height())*.55);g.setColorAt(0,QColor(80,50,160,28));g.setColorAt(1,QColor(7,9,13,0));p.fillRect(self.rect(),g)
         g2=QRadialGradient(self.width()*.86+np.cos(self._pulse*.7)*60,self.height()*.72+np.sin(self._pulse*.7)*40,max(self.width(),self.height())*.5);g2.setColorAt(0,QColor(0,170,210,20));g2.setColorAt(1,QColor(7,9,13,0));p.fillRect(self.rect(),g2)
         a0=self.original if self.show_original else self.image_data
+        if self.image_data is not None and not self.show_original:
+            for ov in self.text_overlays:
+                f=QFont(ov.font_family,ov.size);f.setBold(ov.bold);f.setItalic(ov.italic);p.setFont(f);c=QColor(ov.color);c.setAlphaF(max(0,min(1,ov.opacity)));p.setPen(QPen(c));p.drawText(int(self.width()*ov.x),int(self.height()*ov.y),ov.text)
         if a0 is None:return
         a=np.ascontiguousarray(np.clip(a0*255,0,255).astype(np.uint8));h,w=a.shape[:2]
         q=QImage(a.data,w,h,3*w,QImage.Format_RGB888);pm=QPixmap.fromImage(q).scaled(int(w*self.zoom),int(h*self.zoom),Qt.KeepAspectRatio,Qt.SmoothTransformation)
