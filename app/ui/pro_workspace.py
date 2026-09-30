@@ -12,6 +12,7 @@ from app.core.masks import Mask
 from app.ui.widgets import TextOverlay
 from app.export import export_image\nfrom app.project import ProjectFile\nfrom app.image import ImageData\nfrom app.utils import get_logger
 from app.processing.pro_tools import color_wheels,apply_vignette,bloom,halation,tone_curve,linear_gradient_mask,radial_mask,crop_array,transform_array
+from app.retouch.beauty import teeth_whiten,eye_enhance,lip_tint,hair_detail,contour_light
 
 class ProMainWindow(MainWindow):
     """Phase 9-17 professional extension layer.
@@ -36,6 +37,12 @@ class ProMainWindow(MainWindow):
         studio.addAction("Crop / Geometry",self.geometry_dialog)
         studio.addAction("Typography Studio",self.typography_studio)
         studio.addAction("Export Studio",self.export_studio)
+        beauty=studio.addMenu("BEAUTY RETOUCH")
+        beauty.addAction("Teeth Whitening",lambda:self.beauty_action("teeth"))
+        beauty.addAction("Eye Enhancement",lambda:self.beauty_action("eyes"))
+        beauty.addAction("Lip Tint",lambda:self.beauty_action("lips"))
+        beauty.addAction("Hair Detail",lambda:self.beauty_action("hair"))
+        beauty.addAction("Face Light / Contour",lambda:self.beauty_action("contour"))
         studio.addAction("Performance / Preview",self.performance_dialog)
         studio.addSeparator()
         studio.addAction("Reset Pro Controls",self.reset_pro_controls)
@@ -158,6 +165,17 @@ class ProMainWindow(MainWindow):
         box=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);box.accepted.connect(d.accept);box.rejected.connect(d.reject);form.addRow(box)
         if d.exec():
             ov.size=size.value();ov.x=x.value();ov.y=y.value();ov.rotation=rot.value();ov.stroke_width=stroke.value();ov.shadow=shadow.isChecked();ov.bold=bold.isChecked();ov.italic=italic.isChecked();self.canvas.text_overlays=self.text_overlays;self.canvas.update();self.render()
+
+    def beauty_action(self,kind):
+        if not self.layers:return
+        mask=self.layers.active.mask.data.copy() if self.layers.active.mask is not None else None
+        image=self.layers.composite()
+        strength,ok=QInputDialog.getDouble(self,"Beauty Retouch","Strength (uses active layer mask)",.30,0,1,2)
+        if not ok:return
+        fn={"teeth":teeth_whiten,"eyes":eye_enhance,"lips":lip_tint,"hair":hair_detail,"contour":contour_light}[kind]
+        data=fn(image,mask,strength)
+        self.add_processed_layer("Beauty — "+kind.title(),data,mask)
+        self.info.setText("Beauty retouch applied locally using the active mask.")
 
     def export_studio(self):
         if not self.layers:return
