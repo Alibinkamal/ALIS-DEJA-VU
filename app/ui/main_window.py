@@ -8,12 +8,12 @@ from app.core import ImageData,LayerStack,UndoRedoManager,CallableCommand
 from app.core.layers import BlendMode
 from app.core.masks import Mask
 from app.image import ImageSaver,SUPPORTED_FORMATS_FILTER,EXPORT_FORMATS_FILTER
-from app.processing import heal_spot,clone_stamp,dodge_burn
+from app.processing import heal_spot,clone_stamp,dodge_burn,adjust_exposure,adjust_brightness,adjust_contrast,adjust_saturation,adjust_temperature
 from app.ui.widgets import ImageCanvas
 from app.ui.theme import StyleSheet
 class MainWindow(QMainWindow):
  def __init__(self):
-  super().__init__();self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}");self.resize(1450,900);self.image_data=None;self.layers=None;self.undo=UndoRedoManager(40);self.tool="Brush";self.brush_size=40;self.brush_opacity=1.;self.clone_source=None;self._build();self._menus()
+  super().__init__();self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}");self.resize(1450,900);self.image_data=None;self.layers=None;self.undo=UndoRedoManager(40);self.tool="Brush";self.brush_size=40;self.brush_opacity=1.;self.clone_source=None;self.adjustments={"exposure":0.,"brightness":0.,"contrast":0.,"saturation":0.,"temperature":0.};self._build();self._menus()
  def _build(self):
   root=QWidget();self.setCentralWidget(root);main=QHBoxLayout(root);main.setContentsMargins(0,0,0,0)
   left=QWidget();left.setFixedWidth(210);self.tools=QVBoxLayout(left);main.addWidget(left)
@@ -28,7 +28,12 @@ class MainWindow(QMainWindow):
   for text,fn in [("＋ Layer",self.add_layer),("Duplicate",self.duplicate_layer),("Delete",self.delete_layer),("↑ Move Up",lambda:self.move_layer(-1)),("↓ Move Down",lambda:self.move_layer(1)),("Add Mask",self.add_mask)]:
    b=QPushButton(text);b.clicked.connect(fn);self.panel.addWidget(b)
   self.panel.addWidget(QLabel("Blend Mode"));self.blend=QComboBox();self.blend.addItems([x.value for x in BlendMode]);self.blend.currentTextChanged.connect(self.set_blend);self.panel.addWidget(self.blend)
-  self.panel.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);self.panel.addWidget(self.layer_opacity)
+  self.panel.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);self.panel.addWidget(self.layer_opacity);
+  self.panel.addWidget(QLabel("BASIC ADJUSTMENTS"))
+  self.adjust_sliders={}
+  for name,lo,hi in [("exposure",-2,2),("brightness",-1,1),("contrast",-1,1),("saturation",-1,1),("temperature",-1,1)]:
+   row=QHBoxLayout();row.addWidget(QLabel(name.title()));s=QSlider(Qt.Horizontal);s.setRange(0,1000);s.setValue(500);s.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self.set_adjustment(n,a+(b-a)*v/1000));row.addWidget(s);self.panel.addLayout(row);self.adjust_sliders[name]=s
+  self.histogram_label=QLabel("Histogram: no image");self.histogram_label.setWordWrap(True);self.panel.addWidget(self.histogram_label)
   self.retouch_info=QLabel("Phase 3: layers, masks and brush engine. Phase 4: Healing, Clone, Dodge and Burn.");self.retouch_info.setWordWrap(True);self.panel.addWidget(self.retouch_info)
   self.statusBar().showMessage("Ready — Open an image to begin");self.setStyleSheet(StyleSheet.get_stylesheet())
  def _menus(self):
@@ -45,7 +50,12 @@ class MainWindow(QMainWindow):
    self.image_data=ImageData(p);self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}");self.statusBar().showMessage(f"{Path(p).name} • {self.image_data.get_dimensions()[0]}×{self.image_data.get_dimensions()[1]}")
   except Exception as e:QMessageBox.critical(self,"Open failed",str(e))
  def render(self):
-  if self.layers:self.canvas.set_image(self.layers.composite(),self.image_data.original_image)
+  if not self.layers:return
+  base=self.image_data.original_image.copy()
+  base=adjust_exposure(base,self.adjustments["exposure"]);base=adjust_brightness(base,self.adjustments["brightness"]);base=adjust_contrast(base,self.adjustments["contrast"]);base=adjust_saturation(base,self.adjustments["saturation"]);base=adjust_temperature(base,self.adjustments["temperature"])
+  self.layers.layers[0].pixels=base
+  out=self.layers.composite();self.canvas.set_image(out,self.image_data.original_image)
+  mean=float(np.mean(out));clip=float(np.mean((out<=0.001)|(out>=0.999))*100);self.histogram_label.setText(f"Histogram • mean {mean:.3f} • clipped {clip:.1f}%")
  def refresh_layers(self):
   if not self.layers:return
   self.layer_list.blockSignals(True);self.layer_list.clear()
@@ -118,7 +128,10 @@ class MainWindow(QMainWindow):
  def do_redo(self):
   if self.undo.redo():self.render()
  def reset(self):
-  if self.image_data:self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render()
+  if self.image_data:
+   self.adjustments={k:0. for k in self.adjustments}
+   for s in self.adjust_sliders.values():s.blockSignals(True);s.setValue(500);s.blockSignals(False)
+   self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render()
  def export(self):
   if not self.layers:return
   p,_=QFileDialog.getSaveFileName(self,"Export Image","",EXPORT_FORMATS_FILTER)
