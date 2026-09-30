@@ -1,4 +1,5 @@
 import sys,copy
+import numpy as np
 from pathlib import Path
 from PySide6.QtWidgets import QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFileDialog,QMessageBox,QListWidget,QListWidgetItem,QPushButton,QLabel,QComboBox,QSlider,QApplication
 from PySide6.QtGui import QKeySequence
@@ -47,7 +48,7 @@ class MainWindow(QMainWindow):
  def load_image(self,p):
   try:
    from app.core import ImageData
-   self.image_data=ImageData(p);self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}");self.statusBar().showMessage(f"{Path(p).name} • {self.image_data.get_dimensions()[0]}×{self.image_data.get_dimensions()[1]}")
+   self.image_data=ImageData(p);self.adjustments={k:0. for k in self.adjustments};self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}");self.statusBar().showMessage(f"{Path(p).name} • {self.image_data.get_dimensions()[0]}×{self.image_data.get_dimensions()[1]}")
   except Exception as e:QMessageBox.critical(self,"Open failed",str(e))
  def render(self):
   if not self.layers:return
