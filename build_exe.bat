@@ -10,7 +10,7 @@ py -m pip install -r requirements.txt
 if errorlevel 1 (echo Failed to install dependencies.&pause&exit /b 1)
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
-py -m PyInstaller --noconfirm --clean --name="ALIS DEJA VU" --onefile --windowed app/main.py
+py -m PyInstaller --noconfirm --clean --name="ALIS DEJA VU" --onefile --windowed --add-data="%CD%\resources;resources" --collect-submodules=rawpy app/main.py
 if errorlevel 1 (echo Build failed.&pause&exit /b 1)
 echo.
 echo Build complete: dist\ALIS DEJA VU.exe
