@@ -63,3 +63,9 @@ def perspective_warp(image, top_left=(0,0), top_right=(1,0), bottom_right=(1,1),
     dst=np.float32([[float(top_left[0])*w,float(top_left[1])*h],[float(top_right[0])*w,float(top_right[1])*h],[float(bottom_right[0])*w,float(bottom_right[1])*h],[float(bottom_left[0])*w,float(bottom_left[1])*h]])
     M=cv2.getPerspectiveTransform(src,dst); out=cv2.warpPerspective(np.asarray(image,np.float32),M,(w,h),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REFLECT)
     return np.clip(out,0,1).astype(np.float32)
+
+
+def lens_correction(image,amount=0.08):
+    img=np.asarray(image,np.float32);h,w=img.shape[:2];yy,xx=np.indices((h,w),np.float32);x=(xx-(w-1)/2)/max(1,(w-1)/2);y=(yy-(h-1)/2)/max(1,(h-1)/2);r2=x*x+y*y
+    k=float(amount);factor=1+k*r2;mx=(x/factor+1)*.5*(w-1);my=(y/factor+1)*.5*(h-1)
+    return cv2.remap(img,mx.astype(np.float32),my.astype(np.float32),cv2.INTER_LINEAR,borderMode=cv2.BORDER_REFLECT).astype(np.float32)
