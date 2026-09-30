@@ -2,7 +2,7 @@
 
 **Professional Portrait, Beauty & Fashion Photo Editing Studio for Windows**
 
-> **Current status:** v0.9.0 — modern UI/UX overhaul and expanded look library implemented. The project is in active development and is ready for hands-on testing, but it should not be treated as a fully validated production release until a Windows runtime/build pass has been completed.
+> **Current status:** v0.9.1 — modern UI/UX overhaul, expanded look library, and multilingual typography. The project is in active development and is ready for hands-on testing, but it should not be treated as a fully validated production release until a Windows runtime/build pass has been completed.
 
 ALIS DEJA VU is a local, offline-first desktop photo editor built with **Python + PySide6** for portrait, beauty, fashion and editorial photography. Its goal is to provide a serious non-AI retouching workflow based on classical image-processing techniques: layers, masks, healing, cloning, frequency separation, dodge & burn, color grading, presets and non-destructive project saving.
 
@@ -24,6 +24,9 @@ The application currently provides:
 - Look variants such as A1, A2, B1, B2, AB1, AB2, P1–P10 and more, with adjustable 0–100% intensity
 - Professional Light / Color / Effects controls including Whites, Blacks, Clarity, Texture, Dehaze, Vignette and Grain
 - Searchable visual look cards with category filtering and live application
+- TEXT workspace for English and Arabic/RTL typography
+- Font selector, 8–300px text sizing, bold/italic, color selection and text overlays
+- 40-family professional typography catalog; installed fonts are available directly through Qt
 - JPEG/JPG, PNG and TIFF workflows
 - Optional RAW loading through `rawpy`
 - Exposure and tonal adjustments
