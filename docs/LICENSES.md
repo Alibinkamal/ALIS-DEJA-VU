@@ -1,16 +1,19 @@
 # Third-Party Licenses
 
-ALIS DEJA VU does not copy third-party source code. It uses published Python packages through normal package dependencies.
+ALIS DEJA VU is an original Python application. No source code from the referenced projects is copied into this repository.
 
-| Component | Purpose | License |
+| Component | Purpose | License / note |
 |---|---|---|
 | Python | Runtime | PSF License |
-| PySide6 / Qt for Python | Desktop UI | LGPL/GPL/commercial Qt licensing; review the applicable Qt terms for the installed distribution |
+| PySide6 | Desktop GUI / Qt bindings | LGPL/GPL/commercial Qt licensing applies; review the selected distribution terms before redistribution |
 | NumPy | Array processing | BSD-3-Clause |
-| Pillow | Image I/O | Pillow license |
-| OpenCV | Image processing / inpainting | Apache-2.0 |
-| rawpy | RAW decoding when installed | MIT |
+| Pillow | Image I/O and resizing | Pillow license |
+| OpenCV-Python | Classical image processing | Apache License 2.0 |
+| scikit-image | Scientific image-processing dependency | BSD-3-Clause |
+| rawpy | Optional RAW decoding | MIT |
+| imageio | Image I/O ecosystem dependency | BSD-2-Clause |
+| PyInstaller | Windows packaging | GPL with bootloader exception |
 
-Users should review the exact license text shipped by the installed dependency versions before redistribution.
+Dependency licenses can change with versions. Check installed package metadata before redistributing a binary.
 
-No GPL image-editor source is embedded in this repository.
+The project intentionally avoids copying GPL application source code into the repository. No paid service, API key, account or cloud dependency is required.
