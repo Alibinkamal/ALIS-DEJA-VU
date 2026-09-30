@@ -1,143 +1,368 @@
 import sys,copy
-import numpy as np
 from pathlib import Path
-from PySide6.QtWidgets import QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFileDialog,QMessageBox,QListWidget,QListWidgetItem,QPushButton,QLabel,QComboBox,QSlider,QApplication
-from PySide6.QtGui import QKeySequence
-from PySide6.QtCore import Qt
+import numpy as np
+from PySide6.QtWidgets import (
+    QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFileDialog,QMessageBox,
+    QListWidget,QListWidgetItem,QPushButton,QLabel,QComboBox,QSlider,QApplication,
+    QInputDialog,QDialog,QFormLayout,QDialogButtonBox,QSpinBox,QDoubleSpinBox,QCheckBox
+)
+from PySide6.QtGui import QKeySequence,QAction,QIcon
+from PySide6.QtCore import Qt,QThreadPool
 from app import APP_NAME,APP_VERSION
 from app.core import ImageData,LayerStack,UndoRedoManager,CallableCommand
 from app.core.layers import BlendMode
 from app.core.masks import Mask
 from app.image import ImageSaver,SUPPORTED_FORMATS_FILTER,EXPORT_FORMATS_FILTER
-from app.processing import heal_spot,clone_stamp,dodge_burn,adjust_exposure,adjust_brightness,adjust_contrast,adjust_saturation,adjust_temperature
+from app.processing import (
+    heal_spot,clone_stamp,dodge_burn,adjust_exposure,adjust_brightness,adjust_contrast,
+    adjust_saturation,adjust_temperature,adjust_highlights_shadows,apply_curve,
+)
+from app.color import apply_curves,apply_hsl,apply_vibrance,color_balance,selective_color,split_tone,apply_cube_lut
+from app.retouch import frequency_separation,skin_smooth,skin_tone_correct,make_skin_mask
+from app.processing.detail import sharpen,clarity,denoise,add_grain
+from app.presets import PresetManager
+from app.project import ProjectFile
+from app.export import export_image
+from app.performance import PreviewCache
+from app.utils import AppSettings,get_logger
 from app.ui.widgets import ImageCanvas
 from app.ui.theme import StyleSheet
+
 class MainWindow(QMainWindow):
- def __init__(self):
-  super().__init__();self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}");self.resize(1450,900);self.image_data=None;self.layers=None;self.undo=UndoRedoManager(40);self.tool="Brush";self.brush_size=40;self.brush_opacity=1.;self.clone_source=None;self.adjustments={"exposure":0.,"brightness":0.,"contrast":0.,"saturation":0.,"temperature":0.};self._build();self._menus()
- def _build(self):
-  root=QWidget();self.setCentralWidget(root);main=QHBoxLayout(root);main.setContentsMargins(0,0,0,0)
-  left=QWidget();left.setFixedWidth(210);self.tools=QVBoxLayout(left);main.addWidget(left)
-  for name in ["Brush","Mask Paint","Eraser","Healing","Clone","Dodge","Burn"]:
-   b=QPushButton(name);b.clicked.connect(lambda _,n=name:self.set_tool(n));self.tools.addWidget(b)
-  self.tools.addWidget(QLabel("Brush Size"));self.size=QSlider(Qt.Horizontal);self.size.setRange(2,400);self.size.setValue(40);self.size.valueChanged.connect(lambda v:setattr(self,"brush_size",v));self.tools.addWidget(self.size)
-  self.tools.addWidget(QLabel("Opacity"));self.opacity=QSlider(Qt.Horizontal);self.opacity.setRange(1,100);self.opacity.setValue(100);self.opacity.valueChanged.connect(lambda v:setattr(self,"brush_opacity",v/100));self.tools.addWidget(self.opacity)
-  self.invert_btn=QPushButton("Invert Active Mask");self.invert_btn.clicked.connect(self.invert_mask);self.tools.addWidget(self.invert_btn);self.tools.addStretch()
-  self.canvas=ImageCanvas();self.canvas.stroke.connect(self.stroke);main.addWidget(self.canvas,1)
-  right=QWidget();right.setFixedWidth(280);self.panel=QVBoxLayout(right);main.addWidget(right)
-  self.panel.addWidget(QLabel("LAYERS"));self.layer_list=QListWidget();self.layer_list.currentRowChanged.connect(self.select_layer);self.panel.addWidget(self.layer_list,1)
-  for text,fn in [("＋ Layer",self.add_layer),("Duplicate",self.duplicate_layer),("Delete",self.delete_layer),("↑ Move Up",lambda:self.move_layer(-1)),("↓ Move Down",lambda:self.move_layer(1)),("Add Mask",self.add_mask)]:
-   b=QPushButton(text);b.clicked.connect(fn);self.panel.addWidget(b)
-  self.panel.addWidget(QLabel("Blend Mode"));self.blend=QComboBox();self.blend.addItems([x.value for x in BlendMode]);self.blend.currentTextChanged.connect(self.set_blend);self.panel.addWidget(self.blend)
-  self.panel.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);self.panel.addWidget(self.layer_opacity);
-  self.panel.addWidget(QLabel("BASIC ADJUSTMENTS"))
-  self.adjust_sliders={}
-  for name,lo,hi in [("exposure",-2,2),("brightness",-1,1),("contrast",-1,1),("saturation",-1,1),("temperature",-1,1)]:
-   row=QHBoxLayout();row.addWidget(QLabel(name.title()));s=QSlider(Qt.Horizontal);s.setRange(0,1000);s.setValue(500);s.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self.set_adjustment(n,a+(b-a)*v/1000));row.addWidget(s);self.panel.addLayout(row);self.adjust_sliders[name]=s
-  self.histogram_label=QLabel("Histogram: no image");self.histogram_label.setWordWrap(True);self.panel.addWidget(self.histogram_label)
-  self.retouch_info=QLabel("Phase 3: layers, masks and brush engine. Phase 4: Healing, Clone, Dodge and Burn.");self.retouch_info.setWordWrap(True);self.panel.addWidget(self.retouch_info)
-  self.statusBar().showMessage("Ready — Open an image to begin");self.setStyleSheet(StyleSheet.get_stylesheet())
- def _menus(self):
-  m=self.menuBar();f=m.addMenu("File");a=f.addAction("Open Image");a.setShortcut(QKeySequence.Open);a.triggered.connect(self.open_image);a=f.addAction("Export As");a.setShortcut(QKeySequence.SaveAs);a.triggered.connect(self.export);f.addSeparator();f.addAction("Exit",self.close)
-  e=m.addMenu("Edit");u=e.addAction("Undo");u.setShortcut(QKeySequence.Undo);u.triggered.connect(self.do_undo);r=e.addAction("Redo");r.setShortcut(QKeySequence.Redo);r.triggered.connect(self.do_redo);e.addSeparator();e.addAction("Reset",self.reset)
-  v=m.addMenu("View");v.addAction("Fit",self.canvas.fit_to_window);v.addAction("100%",self.canvas.actual_size);v.addAction("Zoom In",self.canvas.zoom_in);v.addAction("Zoom Out",self.canvas.zoom_out)
- def set_tool(self,t):self.tool=t;self.clone_source=None;self.retouch_info.setText(f"Active tool: {t}. {'Clone uses Alt+click to choose a source.' if t=='Clone' else 'Paint directly on the canvas.'}")
- def open_image(self):
-  p,_=QFileDialog.getOpenFileName(self,"Open Image","",SUPPORTED_FORMATS_FILTER)
-  if p:self.load_image(p)
- def load_image(self,p):
-  try:
-   from app.core import ImageData
-   self.image_data=ImageData(p);self.adjustments={k:0. for k in self.adjustments};self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}");self.statusBar().showMessage(f"{Path(p).name} • {self.image_data.get_dimensions()[0]}×{self.image_data.get_dimensions()[1]}")
-  except Exception as e:QMessageBox.critical(self,"Open failed",str(e))
- def render(self):
-  if not self.layers:return
-  base=self.image_data.original_image.copy()
-  base=adjust_exposure(base,self.adjustments["exposure"]);base=adjust_brightness(base,self.adjustments["brightness"]);base=adjust_contrast(base,self.adjustments["contrast"]);base=adjust_saturation(base,self.adjustments["saturation"]);base=adjust_temperature(base,self.adjustments["temperature"])
-  self.layers.layers[0].pixels=base
-  out=self.layers.composite();self.canvas.set_image(out,self.image_data.original_image)
-  mean=float(np.mean(out));clip=float(np.mean((out<=0.001)|(out>=0.999))*100);self.histogram_label.setText(f"Histogram • mean {mean:.3f} • clipped {clip:.1f}%")
- def refresh_layers(self):
-  if not self.layers:return
-  self.layer_list.blockSignals(True);self.layer_list.clear()
-  for i,l in enumerate(reversed(self.layers.layers)):
-   item=QListWidgetItem(("● " if l.visible else "○ ")+l.name);item.setData(Qt.UserRole,len(self.layers.layers)-1-i);self.layer_list.addItem(item)
-  self.layer_list.setCurrentRow(len(self.layers.layers)-1-self.layers.active_index);self.layer_list.blockSignals(False);self.sync_layer_controls()
- def sync_layer_controls(self):
-  l=self.layers.active;self.layer_opacity.blockSignals(True);self.layer_opacity.setValue(round(l.opacity*100));self.layer_opacity.blockSignals(False);self.blend.blockSignals(True);self.blend.setCurrentText(l.blend_mode.value);self.blend.blockSignals(False)
- def select_layer(self,row):
-  if self.layers and row>=0:self.layers.active_index=self.layer_list.item(row).data(Qt.UserRole);self.sync_layer_controls()
- def add_layer(self):
-  if self.layers:self.layers.add("Retouch Layer");self.refresh_layers();self.render()
- def duplicate_layer(self):
-  if self.layers:self.layers.duplicate_active();self.refresh_layers();self.render()
- def delete_layer(self):
-  if self.layers:self.layers.delete_active();self.refresh_layers();self.render()
- def move_layer(self,d):
-  if self.layers:self.layers.move_active(d);self.refresh_layers();self.render()
- def add_mask(self):
-  if self.layers and self.layers.active.mask is None:
-   h,w=self.layers.active.pixels.shape[:2];self.layers.active.mask=Mask(w,h,1.);self.render()
- def invert_mask(self):
-  if self.layers and self.layers.active.mask:self.layers.active.mask.invert();self.render()
- def set_blend(self,text):
-  if self.layers:self.layers.active.blend_mode=BlendMode(text);self.render()
- def set_layer_opacity(self,v):
-  if self.layers:self.layers.active.opacity=v/100.;self.render()
- def set_adjustment(self,name,value):
-  self.adjustments[name]=float(value);self.render()
- def canvas_to_image(self,x,y):
-  if not self.layers:return None
-  h,w=self.layers.active.pixels.shape[:2];z=self.canvas.zoom;px=(x-(self.canvas.width()-w*z)/2-self.canvas.pan[0])/z;py=(y-(self.canvas.height()-h*z)/2-self.canvas.pan[1])/z
-  return (int(px),int(py)) if 0<=px<w and 0<=py<h else None
- def _snapshot(self):return copy.deepcopy(self.layers.layers),self.layers.active_index
- def _restore(self,state):self.layers.layers=copy.deepcopy(state[0]);self.layers.active_index=state[1];self.refresh_layers();self.render()
- def _commit_state(self,before,name):
-  after=self._snapshot();self.undo.execute_command(CallableCommand(name,lambda s=after:self._restore(s),lambda s=before:self._restore(s)))
- def _ensure_retouch_layer(self,name):
-  if self.layers.active_index==0:self.layers.add(name);self.refresh_layers()
-  l=self.layers.active
-  if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],0.)
-  return l
- def stroke(self,x,y):
-  if not self.layers:return
-  pt=self.canvas_to_image(x,y)
-  if pt is None:return
-  if self.tool=="Clone" and (QApplication.keyboardModifiers() & Qt.AltModifier):
-   self.clone_source=pt;self.retouch_info.setText("Clone source selected. Release Alt and paint.");return
-  before=self._snapshot()
-  if self.tool in ("Healing","Clone","Dodge","Burn"):l=self._ensure_retouch_layer(self.tool+" Layer")
-  else:l=self.layers.active
-  if l.locked:return
-  if self.tool=="Mask Paint":
-   if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],1.)
-   l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
-  elif self.tool=="Eraser":
-   if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],1.)
-   l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity,erase=True)
-  elif self.tool=="Brush":
-   if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],0.)
-   base=l.pixels.copy();yy,xx=np.ogrid[:base.shape[0],:base.shape[1]];d=np.sqrt((xx-pt[0])**2+(yy-pt[1])**2);a=np.clip(1-d/max(self.brush_size,1),0,1)**2*self.brush_opacity;color=np.mean(self.layers.composite(),axis=(0,1));l.pixels=base*(1-a[...,None])+color*a[...,None];l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
-  elif self.tool=="Healing":
-   l.pixels=heal_spot(self.layers.composite(),pt,self.brush_size,self.brush_opacity);l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
-  elif self.tool=="Clone":
-   if self.clone_source is None:self.clone_source=pt;self.retouch_info.setText("Clone source set. Alt+click another point to change it.");return
-   l.pixels=clone_stamp(self.layers.composite(),self.clone_source,pt,self.brush_size,self.brush_opacity);l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
-  elif self.tool in ("Dodge","Burn"):
-   l.pixels=dodge_burn(self.layers.composite(),pt,self.brush_size,.2*self.brush_opacity,"dodge" if self.tool=="Dodge" else "burn");l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
-  self._commit_state(before,self.tool);self.render()
- def do_undo(self):
-  if self.undo.undo():self.render()
- def do_redo(self):
-  if self.undo.redo():self.render()
- def reset(self):
-  if self.image_data:
-   self.adjustments={k:0. for k in self.adjustments}
-   for s in self.adjust_sliders.values():s.blockSignals(True);s.setValue(500);s.blockSignals(False)
-   self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render()
- def export(self):
-  if not self.layers:return
-  p,_=QFileDialog.getSaveFileName(self,"Export Image","",EXPORT_FORMATS_FILTER)
-  if p:
-   try:ImageSaver.save(self.layers.composite(),p);self.statusBar().showMessage(f"Exported: {Path(p).name}")
-   except Exception as e:QMessageBox.critical(self,"Export failed",str(e))
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}");self.resize(1500,920)
+        self.image_data=None;self.layers=None;self.undo=UndoRedoManager(50)
+        self.tool="Brush";self.brush_size=40;self.brush_opacity=1.;self.clone_source=None
+        self.settings=AppSettings();self.cache=PreviewCache(self.settings.get("cache_items",8));self.logger=get_logger()
+        self.thread_pool=QThreadPool.globalInstance();self.thread_pool.setMaxThreadCount(max(1,int(self.settings.get("worker_threads",2))))
+        self.preset_manager=PresetManager()
+        self.adjustments={"exposure":0.,"brightness":0.,"contrast":0.,"highlights":0.,"shadows":0.,"saturation":0.,"temperature":0.,"tint":0.,"vibrance":0.}
+        self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
+        self._build();self._menus()
+
+    def _build(self):
+        root=QWidget();self.setCentralWidget(root);main=QHBoxLayout(root);main.setContentsMargins(0,0,0,0);main.setSpacing(4)
+        left=QWidget();left.setFixedWidth(220);self.tools=QVBoxLayout(left);main.addWidget(left)
+        self.tool_buttons={}
+        for name in ["Brush","Mask Paint","Eraser","Healing","Clone","Dodge","Burn"]:
+            b=QPushButton(name);b.clicked.connect(lambda _,n=name:self.set_tool(n));self.tools.addWidget(b);self.tool_buttons[name]=b
+        self.tools.addWidget(QLabel("Brush Size"));self.size=QSlider(Qt.Horizontal);self.size.setRange(2,400);self.size.setValue(40);self.size.valueChanged.connect(lambda v:setattr(self,"brush_size",v));self.tools.addWidget(self.size)
+        self.tools.addWidget(QLabel("Opacity / Flow"));self.opacity=QSlider(Qt.Horizontal);self.opacity.setRange(1,100);self.opacity.setValue(100);self.opacity.valueChanged.connect(lambda v:setattr(self,"brush_opacity",v/100));self.tools.addWidget(self.opacity)
+        self.invert_btn=QPushButton("Invert Active Mask");self.invert_btn.clicked.connect(self.invert_mask);self.tools.addWidget(self.invert_btn)
+        self.tools.addWidget(QLabel("Workflow"))
+        for label,fn in [("Frequency Separation",self.frequency_separation_action),("Skin Smoothing",self.skin_smoothing_action),("Skin Tone Balance",self.skin_tone_action),("Sharpen",lambda:self.detail_action("sharpen")),("Denoise",lambda:self.detail_action("denoise")),("Film Grain",lambda:self.detail_action("grain"))]:
+            b=QPushButton(label);b.clicked.connect(fn);self.tools.addWidget(b)
+        self.tools.addStretch()
+
+        self.canvas=ImageCanvas();self.canvas.stroke.connect(self.stroke);self.canvas.file_dropped.connect(self.load_image);main.addWidget(self.canvas,1)
+
+        right=QWidget();right.setFixedWidth(330);self.panel=QVBoxLayout(right)
+        self.panel.addWidget(QLabel("LAYERS"))
+        self.layer_list=QListWidget();self.layer_list.currentRowChanged.connect(self.select_layer);self.panel.addWidget(self.layer_list,1)
+        for text,fn in [("＋ Layer",self.add_layer),("Duplicate",self.duplicate_layer),("Delete",self.delete_layer),("↑ Move Up",lambda:self.move_layer(-1)),("↓ Move Down",lambda:self.move_layer(1)),("Add Mask",self.add_mask)]:
+            b=QPushButton(text);b.clicked.connect(fn);self.panel.addWidget(b)
+        self.panel.addWidget(QLabel("Blend Mode"));self.blend=QComboBox();self.blend.addItems([x.value for x in BlendMode]);self.blend.currentTextChanged.connect(self.set_blend);self.panel.addWidget(self.blend)
+        self.panel.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);self.panel.addWidget(self.layer_opacity)
+        self.panel.addWidget(QLabel("BASIC / COLOR"))
+        self.adjust_sliders={}
+        for name,lo,hi in [("exposure",-2,2),("brightness",-1,1),("contrast",-1,1),("highlights",-1,1),("shadows",-1,1),("saturation",-1,1),("temperature",-1,1),("tint",-1,1),("vibrance",-1,1)]:
+            row=QHBoxLayout();row.addWidget(QLabel(name.title()));s=QSlider(Qt.Horizontal);s.setRange(0,1000);s.setValue(500);s.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self.set_adjustment(n,a+(b-a)*v/1000));row.addWidget(s);self.panel.addLayout(row);self.adjust_sliders[name]=s
+        self.histogram_label=QLabel("Histogram: no image");self.histogram_label.setWordWrap(True);self.panel.addWidget(self.histogram_label)
+        self.info=QLabel("Phase 5–8 workspace. Drop an image here or use File → Open.");self.info.setWordWrap(True);self.panel.addWidget(self.info)
+        self.statusBar().showMessage("Ready — Open an image to begin");self.setStyleSheet(StyleSheet.get_stylesheet())
+
+    def _menus(self):
+        m=self.menuBar()
+        f=m.addMenu("File");a=f.addAction("Open Image");a.setShortcut(QKeySequence.Open);a.triggered.connect(self.open_image)
+        a=f.addAction("Open Project");a.triggered.connect(self.open_project);a=f.addAction("Save Project");a.setShortcut(QKeySequence.Save);a.triggered.connect(self.save_project)
+        a=f.addAction("Export As");a.setShortcut(QKeySequence.SaveAs);a.triggered.connect(self.export)
+        f.addSeparator();f.addAction("Exit",self.close)
+        e=m.addMenu("Edit");u=e.addAction("Undo");u.setShortcut(QKeySequence.Undo);u.triggered.connect(self.do_undo);r=e.addAction("Redo");r.setShortcut(QKeySequence.Redo);r.triggered.connect(self.do_redo);e.addSeparator();e.addAction("Reset All",self.reset)
+        v=m.addMenu("View");v.addAction("Fit",self.canvas.fit_to_window);v.addAction("100%",self.canvas.actual_size);v.addAction("Zoom In",self.canvas.zoom_in);v.addAction("Zoom Out",self.canvas.zoom_out);v.addAction("Before / Original",lambda:self.canvas.set_before_after(True));v.addAction("After / Edited",lambda:self.canvas.set_before_after(False))
+        c=m.addMenu("Color")
+        c.addAction("RGB Curves",self.curves_dialog);c.addAction("HSL",self.hsl_dialog);c.addAction("Color Balance",self.color_balance_dialog);c.addAction("Selective Color",self.selective_color_dialog);c.addAction("Split Toning",self.split_tone_dialog);c.addAction("Load .cube LUT",self.load_lut);c.addAction("Vibrance +25%",lambda:self.quick_vibrance(.25))
+        p=m.addMenu("Presets");p.addAction("Apply Preset",self.apply_preset_dialog);p.addAction("Save Current Preset",self.save_preset);p.addAction("Open Preset Folder",self.open_preset_folder)
+        t=m.addMenu("Tools");t.addAction("Frequency Separation",self.frequency_separation_action);t.addAction("Skin Smoothing",self.skin_smoothing_action);t.addAction("Skin Tone Balance",self.skin_tone_action);t.addAction("Sharpen",lambda:self.detail_action("sharpen"));t.addAction("Denoise",lambda:self.detail_action("denoise"));t.addAction("Film Grain",lambda:self.detail_action("grain"))
+        s=m.addMenu("Settings");s.addAction("Application Settings",self.settings_dialog);s.addAction("Clear Preview Cache",self.clear_cache)
+        self.shortcut_before=QAction(self);self.shortcut_before.setShortcut(QKeySequence("Tab"));self.shortcut_before.triggered.connect(lambda:self.canvas.set_before_after(not self.canvas.show_original));self.addAction(self.shortcut_before)
+
+    def set_tool(self,t):
+        self.tool=t;self.clone_source=None
+        self.info.setText(f"Active tool: {t}. "+("Alt+click chooses the Clone source." if t=="Clone" else "Paint directly on the canvas."))
+
+    def open_image(self):
+        p,_=QFileDialog.getOpenFileName(self,"Open Image","",SUPPORTED_FORMATS_FILTER)
+        if p:self.load_image(p)
+
+    def load_image(self,p):
+        try:
+            self.image_data=ImageData(p);self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.cache.clear()
+            self.adjustments={k:0. for k in self.adjustments};self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
+            for s in self.adjust_sliders.values():s.blockSignals(True);s.setValue(500);s.blockSignals(False)
+            self.refresh_layers();self.render();self.canvas.set_before_after(False);self.canvas.fit_to_window()
+            self.setWindowTitle(f"{APP_NAME} — {Path(p).name}");self.statusBar().showMessage(f"{Path(p).name} • {self.image_data.get_dimensions()[0]}×{self.image_data.get_dimensions()[1]}")
+        except Exception as e:self.logger.exception("Open failed");QMessageBox.critical(self,"Open failed",str(e))
+
+    def _apply_pipeline(self,image):
+        out=adjust_exposure(image,self.adjustments["exposure"]);out=adjust_brightness(out,self.adjustments["brightness"]);out=adjust_contrast(out,self.adjustments["contrast"])
+        out=adjust_highlights_shadows(out,self.adjustments["highlights"],self.adjustments["shadows"]);out=adjust_saturation(out,self.adjustments["saturation"]);out=adjust_temperature(out,self.adjustments["temperature"])
+        if self.adjustments["tint"]: out=np.clip(out+np.asarray([self.adjustments["tint"]*.12,0,-self.adjustments["tint"]*.12],np.float32),0,1)
+        if self.adjustments["vibrance"]:out=apply_vibrance(out,self.adjustments["vibrance"])
+        a=self.advanced
+        if a["curves_master"] or a["curves_r"] or a["curves_g"] or a["curves_b"]:out=apply_curves(out,a["curves_master"],a["curves_r"],a["curves_g"],a["curves_b"])
+        if a["hsl"]:out=apply_hsl(out,**a["hsl"])
+        if a["balance"]:out=color_balance(out,**a["balance"])
+        if a["selective"]:out=selective_color(out,a["selective"])
+        if a["split"]:out=split_tone(out,**a["split"])
+        if a["lut"]:out=apply_cube_lut(out,a["lut"])
+        return np.clip(out,0,1).astype(np.float32)
+
+    def render(self):
+        if not self.layers:return
+        base=self._apply_pipeline(self.image_data.original_image.copy());self.layers.layers[0].pixels=base
+        out=self.layers.composite();self.canvas.set_image(out,self.image_data.original_image)
+        mean=float(np.mean(out));clip=float(np.mean((out<=.001)|(out>=.999))*100);self.histogram_label.setText(f"Histogram • mean {mean:.3f} • clipped {clip:.1f}% • {out.shape[1]}×{out.shape[0]}")
+
+    def refresh_layers(self):
+        if not self.layers:return
+        self.layer_list.blockSignals(True);self.layer_list.clear()
+        for i,l in enumerate(reversed(self.layers.layers)):
+            item=QListWidgetItem(("● " if l.visible else "○ ")+l.name);item.setData(Qt.UserRole,len(self.layers.layers)-1-i);self.layer_list.addItem(item)
+        self.layer_list.setCurrentRow(len(self.layers.layers)-1-self.layers.active_index);self.layer_list.blockSignals(False);self.sync_layer_controls()
+
+    def sync_layer_controls(self):
+        if not self.layers:return
+        l=self.layers.active;self.layer_opacity.blockSignals(True);self.layer_opacity.setValue(round(l.opacity*100));self.layer_opacity.blockSignals(False);self.blend.blockSignals(True);self.blend.setCurrentText(l.blend_mode.value);self.blend.blockSignals(False)
+
+    def select_layer(self,row):
+        if self.layers and row>=0:self.layers.active_index=self.layer_list.item(row).data(Qt.UserRole);self.sync_layer_controls()
+
+    def add_layer(self):
+        if self.layers:self.layers.add("Retouch Layer");self.refresh_layers();self.render()
+    def duplicate_layer(self):
+        if self.layers:self.layers.duplicate_active();self.refresh_layers();self.render()
+    def delete_layer(self):
+        if self.layers:self.layers.delete_active();self.refresh_layers();self.render()
+    def move_layer(self,d):
+        if self.layers:self.layers.move_active(d);self.refresh_layers();self.render()
+    def add_mask(self):
+        if self.layers and self.layers.active.mask is None:
+            h,w=self.layers.active.pixels.shape[:2];self.layers.active.mask=Mask(w,h,1.);self.render()
+    def invert_mask(self):
+        if self.layers and self.layers.active.mask:self.layers.active.mask.invert();self.render()
+    def set_blend(self,text):
+        if self.layers:self.layers.active.blend_mode=BlendMode(text);self.render()
+    def set_layer_opacity(self,v):
+        if self.layers:self.layers.active.opacity=v/100.;self.render()
+    def set_adjustment(self,name,value):
+        self.adjustments[name]=float(value);self.render()
+
+    def canvas_to_image(self,x,y):
+        if not self.layers:return None
+        h,w=self.layers.active.pixels.shape[:2];z=self.canvas.zoom;px=(x-(self.canvas.width()-w*z)/2-self.canvas.pan[0])/z;py=(y-(self.canvas.height()-h*z)/2-self.canvas.pan[1])/z
+        return (int(px),int(py)) if 0<=px<w and 0<=py<h else None
+    def _snapshot(self):return copy.deepcopy(self.layers.layers),self.layers.active_index,copy.deepcopy(self.adjustments),copy.deepcopy(self.advanced)
+    def _restore(self,state):
+        self.layers.layers=copy.deepcopy(state[0]);self.layers.active_index=state[1];self.adjustments=copy.deepcopy(state[2]);self.advanced=copy.deepcopy(state[3]);self.refresh_layers();self.render()
+    def _commit_state(self,before,name):
+        after=self._snapshot();self.undo.execute_command(CallableCommand(name,lambda s=after:self._restore(s),lambda s=before:self._restore(s)))
+    def _ensure_retouch_layer(self,name):
+        if self.layers.active_index==0:self.layers.add(name)
+        l=self.layers.active
+        if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],0.)
+        return l
+
+    def stroke(self,x,y):
+        if not self.layers:return
+        pt=self.canvas_to_image(x,y)
+        if pt is None:return
+        if self.tool=="Clone" and (QApplication.keyboardModifiers() & Qt.AltModifier):
+            self.clone_source=pt;self.info.setText("Clone source selected. Release Alt and paint.");return
+        before=self._snapshot()
+        if self.tool in ("Healing","Clone","Dodge","Burn"):l=self._ensure_retouch_layer(self.tool+" Layer")
+        else:l=self.layers.active
+        if l.locked:return
+        if self.tool=="Mask Paint":
+            if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],1.)
+            l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
+        elif self.tool=="Eraser":
+            if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],1.)
+            l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity,erase=True)
+        elif self.tool=="Brush":
+            if l.mask is None:l.mask=Mask(l.pixels.shape[1],l.pixels.shape[0],0.)
+            base=l.pixels.copy();yy,xx=np.ogrid[:base.shape[0],:base.shape[1]];d=np.sqrt((xx-pt[0])**2+(yy-pt[1])**2);a=np.clip(1-d/max(self.brush_size,1),0,1)**2*self.brush_opacity;color=np.mean(self.layers.composite(),axis=(0,1));l.pixels=base*(1-a[...,None])+color*a[...,None];l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
+        elif self.tool=="Healing":
+            l.pixels=heal_spot(self.layers.composite(),pt,self.brush_size,self.brush_opacity);l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
+        elif self.tool=="Clone":
+            if self.clone_source is None:self.clone_source=pt;self.info.setText("Clone source set. Alt+click another point to change it.");return
+            l.pixels=clone_stamp(self.layers.composite(),self.clone_source,pt,self.brush_size,self.brush_opacity);l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
+        elif self.tool in ("Dodge","Burn"):
+            l.pixels=dodge_burn(self.layers.composite(),pt,self.brush_size,.2*self.brush_opacity,"dodge" if self.tool=="Dodge" else "burn");l.mask.paint(pt[0],pt[1],self.brush_size,self.brush_opacity)
+        self._commit_state(before,self.tool);self.render()
+
+    def do_undo(self):
+        if self.undo.undo():self.render()
+    def do_redo(self):
+        if self.undo.redo():self.render()
+
+    def reset(self):
+        if not self.image_data:return
+        self.adjustments={k:0. for k in self.adjustments};self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
+        for s in self.adjust_sliders.values():s.blockSignals(True);s.setValue(500);s.blockSignals(False)
+        self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render()
+
+    def add_processed_layer(self,name,data,mask_data=None,blend=BlendMode.NORMAL):
+        if not self.layers:return
+        l=self.layers.add(name,data);l.blend_mode=blend;l.mask=Mask(data.shape[1],data.shape[0],1.) if mask_data is None else Mask(data.shape[1],data.shape[0],0.)
+        if mask_data is not None:l.mask.data=np.clip(mask_data,0,1).astype(np.float32)
+        self.refresh_layers();self.render()
+
+    def frequency_separation_action(self):
+        if not self.layers:return
+        radius,ok=QInputDialog.getDouble(self,"Frequency Separation","Low-frequency radius (px)",8,1,40,1)
+        if not ok:return
+        image=self.layers.composite();low,high=frequency_separation(image,radius)
+        self.layers.add("FS — Low Frequency",low);self.layers.active.mask=Mask(low.shape[1],low.shape[0],1.)
+        self.layers.add("FS — High Frequency",high);self.layers.active.blend_mode=BlendMode.LINEAR_LIGHT;self.layers.active.mask=Mask(high.shape[1],high.shape[0],1.)
+        self.refresh_layers();self.render();self.info.setText("Frequency Separation created: Low Frequency for tone/color, High Frequency for texture.")
+    def skin_smoothing_action(self):
+        if not self.layers:return
+        strength,ok=QInputDialog.getDouble(self,"Skin Smoothing","Strength",0.25,0,1,2)
+        if not ok:return
+        radius,ok=QInputDialog.getDouble(self,"Skin Smoothing","Texture radius",4,1,20,1)
+        if not ok:return
+        image=self.layers.composite();mask=make_skin_mask(image);sm=skin_smooth(image,mask,radius,strength);self.add_processed_layer("Skin — Natural Smoothing",sm,mask);self.info.setText("Manual classical skin mask + edge-preserving smoothing. No AI.")
+    def skin_tone_action(self):
+        if not self.layers:return
+        strength,ok=QInputDialog.getDouble(self,"Skin Tone Balance","Strength",0.25,0,1,2)
+        if not ok:return
+        image=self.layers.composite();mask=make_skin_mask(image);out=skin_tone_correct(image,strength=strength,mask=mask);self.add_processed_layer("Skin — Tone Balance",out,mask);self.info.setText("Skin tone balancing is mask-based and deterministic.")
+    def detail_action(self,kind):
+        if not self.layers:return
+        image=self.layers.composite()
+        if kind=="sharpen":
+            amount,ok=QInputDialog.getDouble(self,"Sharpen","Amount",0.7,0,3,2)
+            if not ok:return
+            data=sharpen(image,amount,1.0,.03);name="Detail — Sharpen"
+        elif kind=="denoise":
+            amount,ok=QInputDialog.getDouble(self,"Denoise","Strength",0.25,0,1,2)
+            if not ok:return
+            data=denoise(image,amount);name="Detail — Noise Reduction"
+        else:
+            amount,ok=QInputDialog.getDouble(self,"Film Grain","Amount",0.03,0,0.2,3)
+            if not ok:return
+            data=add_grain(image,amount);name="Look — Film Grain"
+        self.add_processed_layer(name,data);self.info.setText(f"{name} applied as a separate editable layer.")
+
+    def curves_dialog(self):
+        if not self.layers:return
+        text,ok=QInputDialog.getText(self,"RGB Curves","Master points x:y (comma separated)",text="0:0,0.25:0.2,0.5:0.5,0.75:0.8,1:1")
+        if not ok:return
+        try:
+            pts=[tuple(map(float,p.strip().split(":"))) for p in text.split(",")];self.advanced["curves_master"]=pts;self.render()
+        except Exception as e:QMessageBox.warning(self,"Curves",f"Invalid points: {e}")
+    def hsl_dialog(self):
+        h,ok=QInputDialog.getDouble(self,"HSL","Hue shift (-1..1)",0,-1,1,3)
+        if not ok:return
+        s,ok=QInputDialog.getDouble(self,"HSL","Saturation (-1..1)",0,-1,1,3)
+        if not ok:return
+        l,ok=QInputDialog.getDouble(self,"HSL","Luminance (-1..1)",0,-1,1,3)
+        if ok:self.advanced["hsl"]={"hue":h,"saturation":s,"luminance":l};self.render()
+    def color_balance_dialog(self):
+        sh,ok=QInputDialog.getText(self,"Color Balance","Shadows RGB offsets, e.g. -0.02,0,0.03",text="0,0,0")
+        if not ok:return
+        mi,ok=QInputDialog.getText(self,"Color Balance","Midtones RGB offsets",text="0,0,0")
+        if not ok:return
+        hi,ok=QInputDialog.getText(self,"Color Balance","Highlights RGB offsets",text="0,0,0")
+        if not ok:return
+        try:
+            parse=lambda x:tuple(float(v.strip()) for v in x.split(","))
+            self.advanced["balance"]={"shadows":parse(sh),"midtones":parse(mi),"highlights":parse(hi),"strength":1.0};self.render()
+        except Exception as e:QMessageBox.warning(self,"Color Balance",str(e))
+    def selective_color_dialog(self):
+        name,ok=QInputDialog.getItem(self,"Selective Color","Color family",["reds","yellows","greens","cyans","blues","magentas","neutrals"],0,False)
+        if not ok:return
+        values,ok=QInputDialog.getText(self,"Selective Color","RGB offsets -100..100",text="0,0,0")
+        if ok:
+            try:self.advanced["selective"]={name:tuple(float(v.strip()) for v in values.split(","))};self.render()
+            except Exception as e:QMessageBox.warning(self,"Selective Color",str(e))
+    def split_tone_dialog(self):
+        amount,ok=QInputDialog.getDouble(self,"Split Toning","Amount",0.12,0,1,2)
+        if not ok:return
+        self.advanced["split"]={"amount":amount,"shadow_rgb":(0.08,0.10,0.16),"highlight_rgb":(0.95,0.82,0.65),"balance":0.0};self.render()
+    def load_lut(self):
+        p,_=QFileDialog.getOpenFileName(self,"Load .cube LUT","", "3D LUT (*.cube)")
+        if p:
+            try:self.advanced["lut"]=p;self.render();self.info.setText(f"LUT loaded: {Path(p).name}")
+            except Exception as e:QMessageBox.critical(self,"LUT failed",str(e))
+    def quick_vibrance(self,value):self.adjustments["vibrance"]=value;self.render()
+
+    def _preset_state(self):
+        return {"adjustments":self.adjustments.copy(),"color":self.advanced.copy()}
+    def apply_preset_dialog(self):
+        names=self.preset_manager.list_names();name,ok=QInputDialog.getItem(self,"Apply Preset","Preset",names,0,False)
+        if not ok:return
+        data=self.preset_manager.get(name);data=data.get("settings",data);self.adjustments.update(data.get("adjustments",{}))
+        color=data.get("color",{}); 
+        if "shadows" in color or "highlights" in color:self.advanced["balance"]={"shadows":tuple(color.get("shadows",(0,0,0))),"midtones":tuple(color.get("midtones",(0,0,0))),"highlights":tuple(color.get("highlights",(0,0,0))),"strength":1.0}
+        if "amount" in color:self.advanced["split"]=color
+        for k,v in self.adjustments.items():
+            if k in self.adjust_sliders:
+                lo,hi={"exposure":(-2,2),"brightness":(-1,1),"contrast":(-1,1),"highlights":(-1,1),"shadows":(-1,1),"saturation":(-1,1),"temperature":(-1,1),"tint":(-1,1),"vibrance":(-1,1)}[k]
+                self.adjust_sliders[k].blockSignals(True);self.adjust_sliders[k].setValue(round((v-lo)/(hi-lo)*1000));self.adjust_sliders[k].blockSignals(False)
+        self.render();self.info.setText(f"Preset applied: {name}")
+    def save_preset(self):
+        if not self.layers:return
+        name,ok=QInputDialog.getText(self,"Save Preset","Preset name")
+        if ok and name.strip():
+            try:self.preset_manager.save(name,self._preset_state());self.info.setText(f"Preset saved: {name}")
+            except Exception as e:QMessageBox.warning(self,"Preset",str(e))
+    def open_preset_folder(self):
+        import os
+        p=str(self.preset_manager.directory);os.startfile(p) if sys.platform=="win32" else None
+
+    def save_project(self):
+        if not self.layers or not self.image_data:return
+        p,_=QFileDialog.getSaveFileName(self,"Save Project","", "ALIS DEJA VU Project (*.alis)")
+        if not p:return
+        try:
+            temp=copy.deepcopy(self.layers);temp.layers[0].pixels=self.image_data.original_image.copy()
+            ProjectFile.save(p,self.image_data.file_path,self.adjustments,temp,{"app_version":APP_VERSION})
+            self.statusBar().showMessage(f"Project saved: {Path(p).name}")
+        except Exception as e:self.logger.exception("Project save failed");QMessageBox.critical(self,"Save Project failed",str(e))
+
+    def open_project(self):
+        p,_=QFileDialog.getOpenFileName(self,"Open Project","", "ALIS DEJA VU Project (*.alis)")
+        if not p:return
+        try:
+            import json,zipfile
+            with zipfile.ZipFile(p) as z:manifest=json.loads(z.read("manifest.json").decode("utf-8"))
+            original=Path(manifest["original_path"])
+            if not original.exists():
+                QMessageBox.warning(self,"Original image missing",f"The project references:\n{original}\n\nMove the original image back to this path before opening the project.")
+                return
+            self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,LayerStack,Mask,BlendMode);self.adjustments.update(manifest.get("adjustments",{}));self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}")
+        except Exception as e:self.logger.exception("Project open failed");QMessageBox.critical(self,"Open Project failed",str(e))
+
+    def export(self):
+        if not self.layers:return
+        p,_=QFileDialog.getSaveFileName(self,"Export Image","",EXPORT_FORMATS_FILTER)
+        if not p:return
+        quality,ok=QInputDialog.getInt(self,"Export","JPEG quality (used for JPEG)",self.settings.get("default_jpeg_quality",95),1,100)
+        if not ok:return
+        try:export_image(self.layers.composite(),p,quality=quality);self.statusBar().showMessage(f"Exported: {Path(p).name}")
+        except Exception as e:self.logger.exception("Export failed");QMessageBox.critical(self,"Export failed",str(e))
+
+    def settings_dialog(self):
+        d=QDialog(self);d.setWindowTitle("ALIS DEJA VU Settings");form=QFormLayout(d)
+        threads=QSpinBox();threads.setRange(1,32);threads.setValue(int(self.settings.get("worker_threads",2)));cache=QSpinBox();cache.setRange(1,32);cache.setValue(int(self.settings.get("cache_items",8)));quality=QSpinBox();quality.setRange(1,100);quality.setValue(int(self.settings.get("default_jpeg_quality",95)));auto=QCheckBox();auto.setChecked(bool(self.settings.get("autosave",True)))
+        form.addRow("Worker threads",threads);form.addRow("Preview cache items",cache);form.addRow("Default JPEG quality",quality);form.addRow("Autosave preference",auto)
+        box=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);box.accepted.connect(d.accept);box.rejected.connect(d.reject);form.addRow(box)
+        if d.exec():
+            self.settings.set("worker_threads",threads.value());self.settings.set("cache_items",cache.value());self.settings.set("default_jpeg_quality",quality.value());self.settings.set("autosave",auto.isChecked());self.settings.save();self.cache=PreviewCache(cache.value());self.thread_pool.setMaxThreadCount(threads.value())
+    def clear_cache(self):self.cache.clear();self.info.setText("Preview cache cleared.")
+
+if __name__=="__main__":
+    from PySide6.QtWidgets import QApplication
+    app=QApplication(sys.argv);app.setApplicationName(APP_NAME);app.setApplicationVersion(APP_VERSION);app.setStyle("Fusion");w=MainWindow();w.show();sys.exit(app.exec())
