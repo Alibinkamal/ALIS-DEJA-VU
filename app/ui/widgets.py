@@ -24,9 +24,6 @@ class ImageCanvas(QWidget):
         g=QRadialGradient(self.width()*.18+np.sin(self._pulse)*80,self.height()*.18+np.cos(self._pulse)*50,max(self.width(),self.height())*.55);g.setColorAt(0,QColor(80,50,160,28));g.setColorAt(1,QColor(7,9,13,0));p.fillRect(self.rect(),g)
         g2=QRadialGradient(self.width()*.86+np.cos(self._pulse*.7)*60,self.height()*.72+np.sin(self._pulse*.7)*40,max(self.width(),self.height())*.5);g2.setColorAt(0,QColor(0,170,210,20));g2.setColorAt(1,QColor(7,9,13,0));p.fillRect(self.rect(),g2)
         a0=self.original if self.show_original else self.image_data
-        if self.image_data is not None and not self.show_original:
-            for ov in self.text_overlays:
-                f=QFont(ov.font_family,ov.size);f.setBold(ov.bold);f.setItalic(ov.italic);p.setFont(f);c=QColor(ov.color);c.setAlphaF(max(0,min(1,ov.opacity)));p.setPen(QPen(c));p.drawText(int(self.width()*ov.x),int(self.height()*ov.y),ov.text)
         if a0 is None:return
         a=np.ascontiguousarray(np.clip(a0*255,0,255).astype(np.uint8));h,w=a.shape[:2]
         q=QImage(a.data,w,h,3*w,QImage.Format_RGB888);pm=QPixmap.fromImage(q).scaled(int(w*self.zoom),int(h*self.zoom),Qt.KeepAspectRatio,Qt.SmoothTransformation)
