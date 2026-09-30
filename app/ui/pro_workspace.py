@@ -14,7 +14,7 @@ from app.export import export_image
 from app.project import ProjectFile
 from app.image import ImageData
 from app.utils import get_logger
-from app.processing.pro_tools import color_wheels,apply_vignette,bloom,halation,tone_curve,linear_gradient_mask,radial_mask,crop_array,transform_array
+from app.processing.pro_tools import color_wheels,apply_vignette,bloom,halation,tone_curve,linear_gradient_mask,radial_mask,crop_array,transform_array,perspective_warp
 from app.retouch.beauty import teeth_whiten,eye_enhance,lip_tint,hair_detail,contour_light
 
 class ProMainWindow(MainWindow):
@@ -133,7 +133,7 @@ class ProMainWindow(MainWindow):
 
     def geometry_dialog(self):
         if not self.layers:return
-        choice,ok=QInputDialog.getItem(self,"Crop / Geometry","Operation",["Crop by pixels","Rotate 90°","Rotate 180°","Rotate 270°","Flip Horizontal","Flip Vertical"],0,False)
+        choice,ok=QInputDialog.getItem(self,"Crop / Geometry","Operation",["Crop by pixels","Rotate 90°","Rotate 180°","Rotate 270°","Flip Horizontal","Flip Vertical","Perspective"],0,False)
         if not ok:return
         if choice=="Crop by pixels":
             h,w=self.layers.active.pixels.shape[:2]
@@ -143,6 +143,14 @@ class ProMainWindow(MainWindow):
                 if not good:return
                 vals.append(v)
             x,y,cw,ch=vals;self._transform_all_layers(lambda a:crop_array(a,x,y,cw,ch))
+        elif choice=="Perspective":
+            values=[]
+            for label,default in [("Top-left X",0.0),("Top-left Y",0.0),("Top-right X",1.0),("Top-right Y",0.0),("Bottom-right X",1.0),("Bottom-right Y",1.0),("Bottom-left X",0.0),("Bottom-left Y",1.0)]:
+                v,good=QInputDialog.getDouble(self,"Perspective",label,default,-.5,1.5,3)
+                if not good:return
+                values.append(v)
+            tl=(values[0],values[1]);tr=(values[2],values[3]);br=(values[4],values[5]);bl=(values[6],values[7])
+            self._transform_all_layers(lambda a:perspective_warp(a,tl,tr,br,bl))
         else:
             rot={"Rotate 90°":90,"Rotate 180°":180,"Rotate 270°":270}.get(choice,0)
             self._transform_all_layers(lambda a:transform_array(a,rot,choice=="Flip Horizontal",choice=="Flip Vertical"))
