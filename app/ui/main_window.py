@@ -115,7 +115,7 @@ class MainWindow(QMainWindow):
         if a["balance"]:out=color_balance(out,**a["balance"])
         if a["selective"]:out=selective_color(out,a["selective"])
         if a["split"]:out=split_tone(out,**a["split"])
-        if a["lut"]:out=apply_cube_lut(out,a["lut"])
+        if a["lut"] and Path(a["lut"]).exists():out=apply_cube_lut(out,a["lut"])
         return np.clip(out,0,1).astype(np.float32)
 
     def render(self):
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         if not p:return
         try:
             temp=copy.deepcopy(self.layers);temp.layers[0].pixels=self.image_data.original_image.copy()
-            ProjectFile.save(p,self.image_data.file_path,self.adjustments,temp,{"app_version":APP_VERSION})
+            ProjectFile.save(p,self.image_data.file_path,self.adjustments,temp,{"app_version":APP_VERSION,"advanced":self.advanced})
             self.statusBar().showMessage(f"Project saved: {Path(p).name}")
         except Exception as e:self.logger.exception("Project save failed");QMessageBox.critical(self,"Save Project failed",str(e))
 
@@ -342,7 +342,7 @@ class MainWindow(QMainWindow):
             if not original.exists():
                 QMessageBox.warning(self,"Original image missing",f"The project references:\n{original}\n\nMove the original image back to this path before opening the project.")
                 return
-            self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,LayerStack,Mask,BlendMode);self.adjustments.update(manifest.get("adjustments",{}));self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}")
+            self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,LayerStack,Mask,BlendMode);self.adjustments.update(manifest.get("adjustments",{}));self.advanced.update(manifest.get("metadata",{}).get("advanced",{}));self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}")
         except Exception as e:self.logger.exception("Project open failed");QMessageBox.critical(self,"Open Project failed",str(e))
 
     def export(self):
