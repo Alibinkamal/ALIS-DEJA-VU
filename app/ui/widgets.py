@@ -1,20 +1,24 @@
 import numpy as np
-from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLabel,QSlider,QDoubleSpinBox,QGroupBox
-from PySide6.QtGui import QImage,QPixmap,QPainter
-from PySide6.QtCore import Qt,Signal,QPoint
+from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLabel,QSlider,QDoubleSpinBox,QGroupBox,QFrame
+from PySide6.QtGui import QImage,QPixmap,QPainter,QRadialGradient,QColor
+from PySide6.QtCore import Qt,Signal,QPoint,QTimer
 from app.ui.theme import Colors
 
 class ImageCanvas(QWidget):
     zoom_changed=Signal(float); position_changed=Signal(int,int); stroke=Signal(int,int); file_dropped=Signal(str)
     def __init__(self,parent=None):
         super().__init__(parent);self.image_data=None;self.original=None;self.zoom=1.;self.pan=[0,0];self.drag=None;self.show_original=False
-        self.setFocusPolicy(Qt.StrongFocus);self.setAcceptDrops(True);self.setStyleSheet(f"background:{Colors.CANVAS_BACKGROUND.name()};")
+        self.setFocusPolicy(Qt.StrongFocus);self.setAcceptDrops(True);self.setStyleSheet(f"background:{Colors.CANVAS_BACKGROUND.name()};");self._pulse=0.0;self._timer=QTimer(self);self._timer.timeout.connect(self._animate);self._timer.start(70)
+    def _animate(self):
+        self._pulse=(self._pulse+0.006)%6.283;self.update()
     def set_image(self,a,original=None):
         self.image_data=a;self.original=original if original is not None else a;self.update()
     def set_before_after(self,before=False):
         self.show_original=bool(before);self.update()
     def paintEvent(self,e):
         p=QPainter(self);p.fillRect(self.rect(),Colors.CANVAS_BACKGROUND)
+        g=QRadialGradient(self.width()*.18+np.sin(self._pulse)*80,self.height()*.18+np.cos(self._pulse)*50,max(self.width(),self.height())*.55);g.setColorAt(0,QColor(80,50,160,28));g.setColorAt(1,QColor(7,9,13,0));p.fillRect(self.rect(),g)
+        g2=QRadialGradient(self.width()*.86+np.cos(self._pulse*.7)*60,self.height()*.72+np.sin(self._pulse*.7)*40,max(self.width(),self.height())*.5);g2.setColorAt(0,QColor(0,170,210,20));g2.setColorAt(1,QColor(7,9,13,0));p.fillRect(self.rect(),g2)
         a0=self.original if self.show_original else self.image_data
         if a0 is None:return
         a=np.ascontiguousarray(np.clip(a0*255,0,255).astype(np.uint8));h,w=a.shape[:2]
@@ -56,3 +60,16 @@ class ControlPanel(QGroupBox):
         def spin_changed(x):
             slider.blockSignals(True);slider.setValue(int((x-minimum)/(maximum-minimum)*1000));slider.blockSignals(False);callback(x)
         slider.valueChanged.connect(changed);spin.valueChanged.connect(spin_changed);row.addWidget(slider,1);row.addWidget(spin);self._layout.addLayout(row);return slider,spin
+
+class LookCard(QFrame):
+    clicked=Signal(str)
+    def __init__(self,look,parent=None):
+        super().__init__(parent);self.look=look;self.setObjectName("LookCard");self.setCursor(Qt.PointingHandCursor);self.setMinimumHeight(108)
+        self.setStyleSheet(f"""QFrame#LookCard{{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {look.accent},stop:.42 #151A24,stop:1 #0E121A);border:1px solid #303A4B;border-radius:12px;}}QFrame#LookCard:hover{{border:1px solid {look.accent};}}QLabel{{background:transparent;color:white;}}""")
+        lay=QVBoxLayout(self);lay.setContentsMargins(12,10,12,10);lay.setSpacing(2)
+        top=QHBoxLayout();code=QLabel(look.id.split("-")[-1]);code.setStyleSheet("font-weight:800;font-size:12pt;");top.addWidget(code);top.addStretch();badge=QLabel(look.category);badge.setStyleSheet("color:#D7DFEA;font-size:8pt;");top.addWidget(badge);lay.addLayout(top)
+        title=QLabel(look.name);title.setStyleSheet("font-weight:700;font-size:10pt;");lay.addWidget(title)
+        desc=QLabel(look.description or "Editable processing recipe");desc.setStyleSheet("color:#B5C0CF;font-size:8pt;");desc.setWordWrap(True);lay.addWidget(desc)
+    def mousePressEvent(self,e):
+        if e.button()==Qt.LeftButton:self.clicked.emit(self.look.id)
+        super().mousePressEvent(e)
