@@ -2,7 +2,7 @@
 
 **Professional Portrait, Beauty & Fashion Photo Editing Studio for Windows**
 
-> **Current status:** v0.9.1 — modern UI/UX overhaul, expanded look library, and multilingual typography. The project is in active development and is ready for hands-on testing, but it should not be treated as a fully validated production release until a Windows runtime/build pass has been completed.
+> **Current status:** v1.7.0 — Phases 1–17 implemented, including professional masking, 3-way color grading, geometry, typography studio, export studio, and an expanded Fujifilm-inspired look family. Windows end-to-end validation is still required before calling it production-validated. The project is in active development and is ready for hands-on testing, but it should not be treated as a fully validated production release until a Windows runtime/build pass has been completed.
 
 ALIS DEJA VU is a local, offline-first desktop photo editor built with **Python + PySide6** for portrait, beauty, fashion and editorial photography. Its goal is to provide a serious non-AI retouching workflow based on classical image-processing techniques: layers, masks, healing, cloning, frequency separation, dodge & burn, color grading, presets and non-destructive project saving.
 
@@ -20,11 +20,18 @@ The application currently provides:
 
 - Professional dark desktop workspace with animated ambient canvas lighting
 - Modern LOOKS / ADJUST / RETOUCH / LAYERS workspace navigation
-- 80+ built-in editable looks across Cinematic, Portrait, Fashion, Film, Vintage, Moody, Warm, Cool, B&W, Editorial, Night and Clean families
+- 140+ built-in editable looks across Cinematic, Portrait, Fashion, Film, Vintage, Moody, Warm, Cool, B&W, Editorial, Night, Clean and FUJIFILM INSPIRED families
+- 60 original Fujifilm-inspired variants with restrained/standard/strong grades
 - Look variants such as A1, A2, B1, B2, AB1, AB2, P1–P10 and more, with adjustable 0–100% intensity
 - Professional Light / Color / Effects controls including Whites, Blacks, Clarity, Texture, Dehaze, Vignette and Grain
 - Searchable visual look cards with category filtering and live application
 - TEXT workspace for English and Arabic/RTL typography
+- Professional masking: linear gradient and radial masks
+- Three-way color grading: shadows, midtones and highlights wheels
+- Crop, rotate and flip geometry tools
+- Typography Studio with position, rotation, stroke and shadow controls
+- Export Studio with quality, dimensions and aspect-ratio controls
+- Extended non-destructive state snapshots for pro controls
 - Font selector, 8–300px text sizing, bold/italic, color selection and text overlays
 - 40-family professional typography catalog; installed fonts are available directly through Qt
 - JPEG/JPG, PNG and TIFF workflows
@@ -669,11 +676,11 @@ The repository contains third-party dependencies and documentation covering depe
 
 # Release Status
 
-**v0.8.0 — Phases 1–8 implemented**
+**v1.7.0 — Phases 1–17 implemented**
 
 This release represents the current completed development phase, not a declaration that every possible edge case has been eliminated.
 
-The next practical milestone is **Windows end-to-end validation and release hardening**.
+The next practical milestone is **Windows end-to-end validation, bug fixing and EXE release hardening**.
 
 ---
 
