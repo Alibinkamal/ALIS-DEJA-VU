@@ -4,7 +4,7 @@ import numpy as np
 from PySide6.QtWidgets import QDialog,QFormLayout,QDialogButtonBox,QDoubleSpinBox,QSpinBox,QCheckBox,QComboBox,QInputDialog,QMessageBox,QFileDialog,QPushButton,QVBoxLayout,QLabel
 from PySide6.QtCore import Qt,QRectF
 from PySide6.QtGui import QImage,QPainter,QFont,QColor
-from app.ui.main_window import MainWindow
+from app.ui.main_window import MainWindow\nfrom app import APP_NAME,APP_VERSION\nfrom app.core.layers import LayerStack
 from app.core.layers import BlendMode
 from app.core.masks import Mask
 from app.ui.widgets import TextOverlay
@@ -218,7 +218,7 @@ class ProMainWindow(MainWindow):
             original=Path(manifest["original_path"])
             if not original.exists():
                 QMessageBox.warning(self,"Original image missing",f"The project references:\n{original}\n\nMove the original image back to this path before opening the project.");return
-            self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,type(self.layers),Mask,BlendMode)
+            self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,LayerStack,Mask,BlendMode)
             self.adjustments.update(manifest.get("adjustments",{}));meta=manifest.get("metadata",{});self.advanced.update(meta.get("advanced",{}));self.pro_grade.update(meta.get("pro_grade",{}));self.pro_effects.update(meta.get("pro_effects",{}))
             self.text_overlays=[]
             for d in meta.get("text_overlays",[]):
