@@ -4,7 +4,9 @@ import numpy as np
 from PySide6.QtWidgets import QDialog,QFormLayout,QDialogButtonBox,QDoubleSpinBox,QSpinBox,QCheckBox,QComboBox,QInputDialog,QMessageBox,QFileDialog,QPushButton,QVBoxLayout,QLabel
 from PySide6.QtCore import Qt,QRectF
 from PySide6.QtGui import QImage,QPainter,QFont,QColor
-from app.ui.main_window import MainWindow\nfrom app import APP_NAME,APP_VERSION\nfrom app.core.layers import LayerStack
+from app.ui.main_window import MainWindow
+from app import APP_NAME,APP_VERSION
+from app.core.layers import LayerStack
 from app.core.layers import BlendMode
 from app.core.masks import Mask
 from app.ui.widgets import TextOverlay
@@ -229,4 +231,3 @@ class ProMainWindow(MainWindow):
             self.canvas.text_overlays=self.text_overlays;self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}")
         except Exception as e:
             QMessageBox.critical(self,"Open Project failed",str(e))
-\n
