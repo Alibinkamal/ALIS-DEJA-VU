@@ -8,8 +8,8 @@ BUILTIN_PRESETS={
     "Warm Skin":{"adjustments":{"temperature":0.18,"saturation":0.02},"color":{"shadows":[0.01,0.0,-0.01],"highlights":[0.03,0.015,0.0]}},
     "Cinematic Portrait":{"adjustments":{"contrast":0.10,"saturation":-0.05},"color":{"shadows":[-0.01,0.0,0.03],"highlights":[0.03,0.02,-0.01]}},
     "Soft Contrast":{"adjustments":{"contrast":-0.12,"brightness":0.03}},
-    "Film Inspired":{"adjustments":{"contrast":0.06,"saturation":-0.03},"color":{"amount":0.08}},
-    "Cool Shadows / Warm Highlights":{"color":{"shadows":[-0.02,0.0,0.04],"highlights":[0.04,0.02,-0.01],"amount":0.22}}
+    "Film Inspired":{"adjustments":{"contrast":0.06,"saturation":-0.03}},
+    "Cool Shadows / Warm Highlights":{"color":{"shadows":[-0.02,0.0,0.04],"highlights":[0.04,0.02,-0.01]}}
 }
 
 class PresetManager:
