@@ -6,7 +6,7 @@ PROJECT_VERSION=1
 class ProjectFile:
     @staticmethod
     def save(path,original_path,adjustments,layers,metadata=None):
-        path=Path(path); manifest={"format":"ALIS-DEJA-VU","version":PROJECT_VERSION,"original_path":str(original_path),"adjustments":adjustments,"metadata":metadata or {},"layers":[]}; arrays={}
+        path=Path(path); manifest={"format":"ALIS-DEJA-VU","version":PROJECT_VERSION,"original_path":str(original_path),"adjustments":adjustments,"metadata":metadata or {},"active_index":int(layers.active_index),"layers":[]}; arrays={}
         for i,layer in enumerate(layers.layers):
             key=f"layer_{i}";arrays[key]=layer.pixels.astype(np.float32)
             entry={"name":layer.name,"opacity":layer.opacity,"visible":layer.visible,"blend_mode":layer.blend_mode.value,"locked":layer.locked,"pixels":f"{key}.npy","mask":None}
@@ -33,5 +33,5 @@ class ProjectFile:
                 if e.get("mask"):
                     m=np.load(io.BytesIO(z.read(e["mask"])),allow_pickle=False).astype(np.float32);mask=mask_cls(m.shape[1],m.shape[0]);mask.data=np.clip(m,0,1)
                 stack.layers.append(Layer(e["name"],pixels,float(e.get("opacity",1)),bool(e.get("visible",True)),blend_enum(e.get("blend_mode","Normal")),mask,bool(e.get("locked",False))))
-            stack.active_index=min(len(stack.layers)-1,0)
+            stack.active_index=max(0,min(len(stack.layers)-1,int(manifest.get("active_index",0))))
             return manifest,stack
