@@ -1,16 +1,30 @@
 # Development Status
 
+The Master Prompt defines eight internal development phases. The repository now implements the requested scope of all eight phases.
+
 ## Phase 1 — Foundation
-Completed: Python/Qt entrypoint, Windows launcher, image loading/export, dark workspace and canvas.
+Python/Qt entrypoint, Windows launcher, image loading/export, dark workspace and canvas.
 
 ## Phase 2 — Basic Editing
-Completed: exposure, brightness, contrast, saturation, temperature, zoom/pan, reset and live image statistics/histogram summary.
+Exposure, brightness, contrast, highlights, shadows, saturation, temperature, tint, vibrance, histogram statistics, zoom/pan and before/after.
 
 ## Phase 3 — Layers / Masks / Brush
-Completed: editable layer stack, ordering, duplication, deletion, opacity, blend modes, masks, mask inversion, brush painting and erasing, state history.
+Layer creation, duplication, deletion, reordering, opacity, blend modes, masks, mask inversion, brush painting/erasing and state history.
 
 ## Phase 4 — Retouching
-Completed: Healing, Clone Stamp, Dodge and Burn. Retouching uses dedicated layers and masks where practical and can sample the visible composite.
+Healing, Clone Stamp, Dodge and Burn using dedicated masked layers and visible-composite sampling.
 
-## Not yet claimed
-Frequency Separation, advanced skin retouching, advanced curves/HSL, project files, presets, RAW optimization and packaging polish remain later phases from the master specification. They are deliberately not presented as implemented features.
+## Phase 5 — Frequency / Skin / Color
+Frequency Separation, natural skin smoothing, skin-tone balancing, RGB curves, HSL, color balance, selective color, split toning, LUT loading, sharpening, denoise and grain.
+
+## Phase 6 — Presets / Project / Export
+Built-in and user presets, versioned ALIS project files, layer/mask serialization, original-image references and JPEG/PNG/TIFF export with quality control.
+
+## Phase 7 — RAW / Performance / Polish
+Expanded rawpy format support, configurable RAW post-processing, bounded preview cache, worker-thread budget, settings persistence, drag/drop, before/after and UI workflow polish.
+
+## Phase 8 — Testing / Packaging / Documentation
+Behavior tests, Windows CI workflow, PyInstaller build configuration, architecture/research/license documentation and project status documentation.
+
+## Validation note
+The development environment used for implementation is not Windows, so Windows runtime/build validation is delegated to the repository CI workflow or the user's Windows machine. The repository does not claim a Windows build passed unless that result is actually observed.
