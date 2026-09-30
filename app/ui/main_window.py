@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (
     QInputDialog,QDialog,QFormLayout,QDialogButtonBox,QSpinBox,QDoubleSpinBox,QCheckBox
 )
 from PySide6.QtGui import QKeySequence,QAction,QIcon
-from PySide6.QtCore import Qt,QThreadPool\nfrom shiboken6 import isValid
+from PySide6.QtCore import Qt,QThreadPool
+from shiboken6 import isValid
 from app import APP_NAME,APP_VERSION
 from app.core import ImageData,LayerStack,UndoRedoManager,CallableCommand
 from app.core.layers import BlendMode
@@ -99,7 +100,9 @@ class MainWindow(QMainWindow):
         try:
             self.image_data=ImageData(p);self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.cache.clear()
             self.adjustments={k:0. for k in self.adjustments};self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
-            for s in self.adjust_sliders.values():\n                if isValid(s):\n                    s.blockSignals(True);s.setValue(500);s.blockSignals(False)
+            for s in self.adjust_sliders.values():
+                if isValid(s):
+                    s.blockSignals(True);s.setValue(500);s.blockSignals(False)
             self.refresh_layers();self.render();self.canvas.set_before_after(False);self.canvas.fit_to_window()
             self.setWindowTitle(f"{APP_NAME} — {Path(p).name}");self.statusBar().showMessage(f"{Path(p).name} • {self.image_data.get_dimensions()[0]}×{self.image_data.get_dimensions()[1]}")
         except Exception as e:self.logger.exception("Open failed");QMessageBox.critical(self,"Open failed",str(e))
@@ -209,7 +212,9 @@ class MainWindow(QMainWindow):
     def reset(self):
         if not self.image_data:return
         self.adjustments={k:0. for k in self.adjustments};self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
-        for s in self.adjust_sliders.values():\n            if isValid(s):\n                s.blockSignals(True);s.setValue(500);s.blockSignals(False)
+        for s in self.adjust_sliders.values():
+            if isValid(s):
+                s.blockSignals(True);s.setValue(500);s.blockSignals(False)
         self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render()
 
     def add_processed_layer(self,name,data,mask_data=None,blend=BlendMode.NORMAL):
@@ -340,7 +345,10 @@ class MainWindow(QMainWindow):
             with zipfile.ZipFile(p) as z:manifest=json.loads(z.read("manifest.json").decode("utf-8"))
             original=Path(manifest["original_path"])
             if not original.exists():
-                QMessageBox.warning(self,"Original image missing",f"The project references:\n{original}\n\nMove the original image back to this path before opening the project.")
+                QMessageBox.warning(self,"Original image missing",f"The project references:
+{original}
+
+Move the original image back to this path before opening the project.")
                 return
             self.image_data=ImageData(str(original));_,self.layers=ProjectFile.load(p,LayerStack,Mask,BlendMode);self.adjustments.update(manifest.get("adjustments",{}));self.advanced.update(manifest.get("metadata",{}).get("advanced",{}));self.undo.clear();self.refresh_layers();self.render();self.canvas.fit_to_window();self.setWindowTitle(f"{APP_NAME} — {Path(p).name}")
         except Exception as e:self.logger.exception("Project open failed");QMessageBox.critical(self,"Open Project failed",str(e))
