@@ -121,6 +121,36 @@ _FAMILIES = {
     ],
 }
 
+# Fujifilm-inspired family. These are original deterministic recipes, not copied LUTs.
+# The names reference documented Film Simulation concepts; rendering remains ALIS-owned.
+_FUJI_BASE = [
+    ("STD","PROVIA Inspired",{"contrast":.04,"vibrance":.05}),
+    ("V","VELVIA Inspired",{"contrast":.12,"saturation":.14,"vibrance":.20}),
+    ("S","ASTIA Inspired",{"contrast":-.04,"saturation":.08,"temperature":.03,"highlights":-.08}),
+    ("CC","CLASSIC CHROME Inspired",{"contrast":.12,"saturation":-.12,"temperature":-.03,"shadows":-.04}),
+    ("RA","REALA ACE Inspired",{"contrast":.05,"saturation":-.02,"temperature":.02,"vibrance":.06}),
+    ("PNH","PRO Neg Hi Inspired",{"contrast":.18,"saturation":-.05,"highlights":-.06,"shadows":-.04}),
+    ("PNS","PRO Neg Std Inspired",{"contrast":-.05,"saturation":-.10,"highlights":-.10,"shadows":.06}),
+    ("CN","CLASSIC Neg Inspired",{"contrast":.20,"saturation":-.06,"shadows":-.12,"temperature":-.03}),
+    ("NN","NOSTALGIC Neg Inspired",{"contrast":.08,"saturation":-.06,"temperature":.18,"tint":-.02,"highlights":-.10}),
+    ("ET","ETERNA Inspired",{"contrast":-.16,"saturation":-.16,"highlights":-.08,"shadows":.08}),
+    ("EB","ETERNA Bleach Inspired",{"contrast":.22,"saturation":-.30,"highlights":-.08,"shadows":-.12}),
+    ("AC","ACROS Inspired",{"saturation":-1.0,"contrast":.18,"shadows":-.08,"highlights":-.06}),
+    ("ACY","ACROS + Yellow Inspired",{"saturation":-1.0,"contrast":.14,"temperature":.04,"highlights":-.04}),
+    ("ACR","ACROS + Red Inspired",{"saturation":-1.0,"contrast":.24,"temperature":.02,"shadows":-.10}),
+    ("ACG","ACROS + Green Inspired",{"saturation":-1.0,"contrast":.12,"tint":-.03,"shadows":.04}),
+    ("MY","MONO + Yellow Inspired",{"saturation":-1.0,"contrast":.10,"temperature":.05}),
+    ("MR","MONO + Red Inspired",{"saturation":-1.0,"contrast":.20,"temperature":.02}),
+    ("MG","MONO + Green Inspired",{"saturation":-1.0,"contrast":.08,"tint":-.03}),
+    ("SEP","SEPIA Inspired",{"contrast":-.02,"saturation":-.45,"temperature":.30}),
+    ("CIN","CINEMA Soft Inspired",{"contrast":-.12,"saturation":-.10,"temperature":-.04,"highlights":-.10}),
+]
+_FUJI_VARIANTS=[]
+for _code,_name,_recipe in _FUJI_BASE:
+    for _suffix,_scale in (("S",.72),("M",1.0),("H",1.28)):
+        _FUJI_VARIANTS.append((f"{_code}-{_suffix}",f"{_name} {_suffix}",{k:v*_scale for k,v in _recipe.items()}))
+_FAMILIES["FUJIFILM INSPIRED"]=_FUJI_VARIANTS
+
 _COLORS=["#8B5CF6","#06B6D4","#F59E0B","#EC4899","#22C55E","#EF4444","#3B82F6","#14B8A6","#F97316","#A855F7"]
 
 def _build() -> List[Look]:
