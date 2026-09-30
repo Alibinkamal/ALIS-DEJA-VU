@@ -2,7 +2,7 @@
 
 **Professional Portrait, Beauty & Fashion Photo Editing Studio for Windows**
 
-> **Current status:** v0.8.0 — Phases 1–8 implemented. The project is in active development and is ready for hands-on testing, but it should not be treated as a fully validated production release until a Windows runtime/build pass has been completed.
+> **Current status:** v0.9.0 — modern UI/UX overhaul and expanded look library implemented. The project is in active development and is ready for hands-on testing, but it should not be treated as a fully validated production release until a Windows runtime/build pass has been completed.
 
 ALIS DEJA VU is a local, offline-first desktop photo editor built with **Python + PySide6** for portrait, beauty, fashion and editorial photography. Its goal is to provide a serious non-AI retouching workflow based on classical image-processing techniques: layers, masks, healing, cloning, frequency separation, dodge & burn, color grading, presets and non-destructive project saving.
 
@@ -18,7 +18,12 @@ ALIS DEJA VU is intended for photographers, retouchers and creators who want a f
 
 The application currently provides:
 
-- Professional dark desktop workspace
+- Professional dark desktop workspace with animated ambient canvas lighting
+- Modern LOOKS / ADJUST / RETOUCH / LAYERS workspace navigation
+- 80+ built-in editable looks across Cinematic, Portrait, Fashion, Film, Vintage, Moody, Warm, Cool, B&W, Editorial, Night and Clean families
+- Look variants such as A1, A2, B1, B2, AB1, AB2, P1–P10 and more, with adjustable 0–100% intensity
+- Professional Light / Color / Effects controls including Whites, Blacks, Clarity, Texture, Dehaze, Vignette and Grain
+- Searchable visual look cards with category filtering and live application
 - JPEG/JPG, PNG and TIFF workflows
 - Optional RAW loading through `rawpy`
 - Exposure and tonal adjustments
@@ -35,6 +40,10 @@ The application currently provides:
 - JPEG/PNG/TIFF export and resizing
 - Preview caching and persistent settings
 - Windows build support through PyInstaller
+
+### Modern UI direction
+
+The 0.9.0 workspace is intentionally inspired by the interaction patterns of modern mobile and professional editors, while using ALIS DEJA VU's own Python/PySide6 implementation. Looks are deterministic recipes generated from the current image rather than copied assets or third-party application code.
 
 ### What it deliberately does NOT do
 
