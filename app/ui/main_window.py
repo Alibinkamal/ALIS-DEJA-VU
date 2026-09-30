@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QInputDialog,QDialog,QFormLayout,QDialogButtonBox,QSpinBox,QDoubleSpinBox,QCheckBox
 )
 from PySide6.QtGui import QKeySequence,QAction,QIcon
-from PySide6.QtCore import Qt,QThreadPool
+from PySide6.QtCore import Qt,QThreadPool\nfrom shiboken6 import isValid
 from app import APP_NAME,APP_VERSION
 from app.core import ImageData,LayerStack,UndoRedoManager,CallableCommand
 from app.core.layers import BlendMode
@@ -47,8 +47,8 @@ class MainWindow(QMainWindow):
         self.tool_buttons={}
         for name in ["Brush","Mask Paint","Eraser","Healing","Clone","Dodge","Burn"]:
             b=QPushButton(name);b.clicked.connect(lambda _,n=name:self.set_tool(n));self.tools.addWidget(b);self.tool_buttons[name]=b
-        self.tools.addWidget(QLabel("Brush Size"));self.size=QSlider(Qt.Horizontal);self.size.setRange(2,400);self.size.setValue(40);self.size.valueChanged.connect(lambda v:setattr(self,"brush_size",v));self.tools.addWidget(self.size)
-        self.tools.addWidget(QLabel("Opacity / Flow"));self.opacity=QSlider(Qt.Horizontal);self.opacity.setRange(1,100);self.opacity.setValue(100);self.opacity.valueChanged.connect(lambda v:setattr(self,"brush_opacity",v/100));self.tools.addWidget(self.opacity)
+        self.tools.addWidget(QLabel("Brush Size"));self.size=QSlider(Qt.Horizontal,left);self.size.setRange(2,400);self.size.setValue(40);self.size.valueChanged.connect(lambda v:setattr(self,"brush_size",v));self.tools.addWidget(self.size)
+        self.tools.addWidget(QLabel("Opacity / Flow"));self.opacity=QSlider(Qt.Horizontal,left);self.opacity.setRange(1,100);self.opacity.setValue(100);self.opacity.valueChanged.connect(lambda v:setattr(self,"brush_opacity",v/100));self.tools.addWidget(self.opacity)
         self.invert_btn=QPushButton("Invert Active Mask");self.invert_btn.clicked.connect(self.invert_mask);self.tools.addWidget(self.invert_btn)
         self.tools.addWidget(QLabel("Workflow"))
         for label,fn in [("Frequency Separation",self.frequency_separation_action),("Skin Smoothing",self.skin_smoothing_action),("Skin Tone Balance",self.skin_tone_action),("Sharpen",lambda:self.detail_action("sharpen")),("Denoise",lambda:self.detail_action("denoise")),("Film Grain",lambda:self.detail_action("grain"))]:
@@ -63,11 +63,11 @@ class MainWindow(QMainWindow):
         for text,fn in [("＋ Layer",self.add_layer),("Duplicate",self.duplicate_layer),("Delete",self.delete_layer),("↑ Move Up",lambda:self.move_layer(-1)),("↓ Move Down",lambda:self.move_layer(1)),("Add Mask",self.add_mask)]:
             b=QPushButton(text);b.clicked.connect(fn);self.panel.addWidget(b)
         self.panel.addWidget(QLabel("Blend Mode"));self.blend=QComboBox();self.blend.addItems([x.value for x in BlendMode]);self.blend.currentTextChanged.connect(self.set_blend);self.panel.addWidget(self.blend)
-        self.panel.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);self.panel.addWidget(self.layer_opacity)
+        self.panel.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal,right);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);self.panel.addWidget(self.layer_opacity)
         self.panel.addWidget(QLabel("BASIC / COLOR"))
         self.adjust_sliders={}
         for name,lo,hi in [("exposure",-2,2),("brightness",-1,1),("contrast",-1,1),("highlights",-1,1),("shadows",-1,1),("saturation",-1,1),("temperature",-1,1),("tint",-1,1),("vibrance",-1,1)]:
-            row=QHBoxLayout();row.addWidget(QLabel(name.title()));s=QSlider(Qt.Horizontal);s.setRange(0,1000);s.setValue(500);s.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self.set_adjustment(n,a+(b-a)*v/1000));row.addWidget(s);self.panel.addLayout(row);self.adjust_sliders[name]=s
+            row=QHBoxLayout();row.addWidget(QLabel(name.title()));s=QSlider(Qt.Horizontal,right);s.setRange(0,1000);s.setValue(500);s.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self.set_adjustment(n,a+(b-a)*v/1000));row.addWidget(s);self.panel.addLayout(row);self.adjust_sliders[name]=s
         self.histogram_label=QLabel("Histogram: no image");self.histogram_label.setWordWrap(True);self.panel.addWidget(self.histogram_label)
         self.info=QLabel("Phase 5–8 workspace. Drop an image here or use File → Open.");self.info.setWordWrap(True);self.panel.addWidget(self.info)
         self.statusBar().showMessage("Ready — Open an image to begin");self.setStyleSheet(StyleSheet.get_stylesheet())
@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         try:
             self.image_data=ImageData(p);self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.cache.clear()
             self.adjustments={k:0. for k in self.adjustments};self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
-            for s in self.adjust_sliders.values():s.blockSignals(True);s.setValue(500);s.blockSignals(False)
+            for s in self.adjust_sliders.values():\n                if isValid(s):\n                    s.blockSignals(True);s.setValue(500);s.blockSignals(False)
             self.refresh_layers();self.render();self.canvas.set_before_after(False);self.canvas.fit_to_window()
             self.setWindowTitle(f"{APP_NAME} — {Path(p).name}");self.statusBar().showMessage(f"{Path(p).name} • {self.image_data.get_dimensions()[0]}×{self.image_data.get_dimensions()[1]}")
         except Exception as e:self.logger.exception("Open failed");QMessageBox.critical(self,"Open failed",str(e))
@@ -209,7 +209,7 @@ class MainWindow(QMainWindow):
     def reset(self):
         if not self.image_data:return
         self.adjustments={k:0. for k in self.adjustments};self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
-        for s in self.adjust_sliders.values():s.blockSignals(True);s.setValue(500);s.blockSignals(False)
+        for s in self.adjust_sliders.values():\n            if isValid(s):\n                s.blockSignals(True);s.setValue(500);s.blockSignals(False)
         self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.refresh_layers();self.render()
 
     def add_processed_layer(self,name,data,mask_data=None,blend=BlendMode.NORMAL):
