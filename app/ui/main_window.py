@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFileDialog,QMessageBox,
-    QListWidget,QListWidgetItem,QPushButton,QLabel,QComboBox,QSlider,QApplication,
+    QListWidget,QListWidgetItem,QPushButton,QLabel,QComboBox,QSlider,QApplication,QFrame,QToolButton,QScrollArea,QGridLayout,QLineEdit,QStackedWidget,QButtonGroup,QSizePolicy,
     QInputDialog,QDialog,QFormLayout,QDialogButtonBox,QSpinBox,QDoubleSpinBox,QCheckBox
 )
 from PySide6.QtGui import QKeySequence,QAction,QIcon
@@ -25,9 +25,10 @@ from app.presets import PresetManager
 from app.project import ProjectFile
 from app.export import export_image
 from app.performance import PreviewCache
+from app.ui.filter_library import LOOKS,CATEGORIES,get_look
 from app.utils import AppSettings,get_logger
-from app.ui.widgets import ImageCanvas
-from app.ui.theme import StyleSheet
+from app.ui.widgets import ImageCanvas,LookCard
+from app.ui.theme import StyleSheet,Colors
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -40,38 +41,96 @@ class MainWindow(QMainWindow):
         self.preset_manager=PresetManager()
         self.adjustments={"exposure":0.,"brightness":0.,"contrast":0.,"highlights":0.,"shadows":0.,"saturation":0.,"temperature":0.,"tint":0.,"vibrance":0.}
         self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
+        self.active_look=None;self.look_intensity=1.0
+        self.pro_controls={"whites":0.0,"blacks":0.0,"clarity":0.0,"texture":0.0,"dehaze":0.0,"vignette":0.0,"grain":0.0}
         self._build();self._menus()
 
     def _build(self):
-        root=QWidget();self.setCentralWidget(root);main=QHBoxLayout(root);main.setContentsMargins(0,0,0,0);main.setSpacing(4)
-        left=QWidget();left.setFixedWidth(220);self.tools=QVBoxLayout(left);main.addWidget(left)
+        root=QWidget();self.setCentralWidget(root);outer=QVBoxLayout(root);outer.setContentsMargins(10,10,10,8);outer.setSpacing(8)
+        top=QFrame();top.setObjectName("TopBar");tl=QHBoxLayout(top);tl.setContentsMargins(14,8,14,8)
+        brand=QLabel("ALIS DEJA VU");brand.setObjectName("Brand");tl.addWidget(brand);ver=QLabel(f"  v{APP_VERSION}");ver.setObjectName("Subtle");tl.addWidget(ver);tl.addStretch()
+        self.nav_group=QButtonGroup(self);self.nav_group.setExclusive(True)
+        for name,label in [("looks","LOOKS"),("adjust","ADJUST"),("retouch","RETOUCH"),("layers","LAYERS")]:
+            b=QToolButton();b.setObjectName("Nav");b.setText(label);b.setCheckable(True);b.clicked.connect(lambda checked,n=name:self.switch_section(n));self.nav_group.addButton(b);tl.addWidget(b);setattr(self,name+"_nav",b)
+        self.looks_nav.setChecked(True);outer.addWidget(top)
+        body=QHBoxLayout();body.setContentsMargins(0,0,0,0);body.setSpacing(8);outer.addLayout(body,1)
+        left=QFrame();left.setObjectName("SidePanel");left.setFixedWidth(178);ll=QVBoxLayout(left);ll.setContentsMargins(10,12,10,12)
+        title=QLabel("WORKSPACE");title.setObjectName("SectionTitle");ll.addWidget(title)
+        for text,name in [("Open Image","open"),("Open Project","open_project"),("Save Project","save"),("Export","export")]:
+            b=QPushButton(text);b.clicked.connect({"open":self.open_image,"open_project":self.open_project,"save":self.save_project,"export":self.export}[name]);ll.addWidget(b)
+        ll.addSpacing(10);lab=QLabel("TOOLS");lab.setObjectName("Subtle");ll.addWidget(lab)
         self.tool_buttons={}
         for name in ["Brush","Mask Paint","Eraser","Healing","Clone","Dodge","Burn"]:
-            b=QPushButton(name);b.clicked.connect(lambda _,n=name:self.set_tool(n));self.tools.addWidget(b);self.tool_buttons[name]=b
-        self.tools.addWidget(QLabel("Brush Size"));self.size=QSlider(Qt.Horizontal,left);self.size.setRange(2,400);self.size.setValue(40);self.size.valueChanged.connect(lambda v:setattr(self,"brush_size",v));self.tools.addWidget(self.size)
-        self.tools.addWidget(QLabel("Opacity / Flow"));self.opacity=QSlider(Qt.Horizontal,left);self.opacity.setRange(1,100);self.opacity.setValue(100);self.opacity.valueChanged.connect(lambda v:setattr(self,"brush_opacity",v/100));self.tools.addWidget(self.opacity)
-        self.invert_btn=QPushButton("Invert Active Mask");self.invert_btn.clicked.connect(self.invert_mask);self.tools.addWidget(self.invert_btn)
-        self.tools.addWidget(QLabel("Workflow"))
-        for label,fn in [("Frequency Separation",self.frequency_separation_action),("Skin Smoothing",self.skin_smoothing_action),("Skin Tone Balance",self.skin_tone_action),("Sharpen",lambda:self.detail_action("sharpen")),("Denoise",lambda:self.detail_action("denoise")),("Film Grain",lambda:self.detail_action("grain"))]:
-            b=QPushButton(label);b.clicked.connect(fn);self.tools.addWidget(b)
-        self.tools.addStretch()
+            b=QPushButton(name);b.clicked.connect(lambda _,n=name:self.set_tool(n));ll.addWidget(b);self.tool_buttons[name]=b
+        ll.addStretch();self.info=QLabel("Open an image to begin.");self.info.setObjectName("Subtle");self.info.setWordWrap(True);ll.addWidget(self.info);body.addWidget(left)
+        center=QFrame();center.setObjectName("Section");cl=QVBoxLayout(center);cl.setContentsMargins(4,4,4,4);cl.setSpacing(4)
+        self.canvas=ImageCanvas();self.canvas.stroke.connect(self.stroke);self.canvas.file_dropped.connect(self.load_image);cl.addWidget(self.canvas,1)
+        bottom=QHBoxLayout()
+        for text,fn in [("Fit",self.canvas.fit_to_window),("100%",self.canvas.actual_size),("−",self.canvas.zoom_out),("+",self.canvas.zoom_in),("Before/After",lambda:self.canvas.set_before_after(not self.canvas.show_original))]:
+            b=QPushButton(text);b.clicked.connect(fn);bottom.addWidget(b)
+        bottom.addStretch();self.status_hint=QLabel("Ready");self.status_hint.setObjectName("Subtle");bottom.addWidget(self.status_hint);cl.addLayout(bottom);body.addWidget(center,1)
+        self.stack=QStackedWidget();self.stack.setObjectName("Inspector");self.stack.setFixedWidth(390);body.addWidget(self.stack)
+        self._build_looks_page();self._build_adjust_page();self._build_retouch_page();self._build_layers_page()
+        self.statusBar().showMessage("Ready — open an image to begin");self.setStyleSheet(StyleSheet.get_stylesheet())
 
-        self.canvas=ImageCanvas();self.canvas.stroke.connect(self.stroke);self.canvas.file_dropped.connect(self.load_image);main.addWidget(self.canvas,1)
+    def _page(self,title):
+        page=QFrame();page.setObjectName("Inspector");lay=QVBoxLayout(page);lay.setContentsMargins(12,12,12,12);lay.setSpacing(8);lab=QLabel(title);lab.setObjectName("SectionTitle");lay.addWidget(lab);return page,lay
 
-        right=QWidget();right.setFixedWidth(330);self.panel=QVBoxLayout(right)
-        self.panel.addWidget(QLabel("LAYERS"))
-        self.layer_list=QListWidget();self.layer_list.currentRowChanged.connect(self.select_layer);self.panel.addWidget(self.layer_list,1)
-        for text,fn in [("＋ Layer",self.add_layer),("Duplicate",self.duplicate_layer),("Delete",self.delete_layer),("↑ Move Up",lambda:self.move_layer(-1)),("↓ Move Down",lambda:self.move_layer(1)),("Add Mask",self.add_mask)]:
-            b=QPushButton(text);b.clicked.connect(fn);self.panel.addWidget(b)
-        self.panel.addWidget(QLabel("Blend Mode"));self.blend=QComboBox();self.blend.addItems([x.value for x in BlendMode]);self.blend.currentTextChanged.connect(self.set_blend);self.panel.addWidget(self.blend)
-        self.panel.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal,right);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);self.panel.addWidget(self.layer_opacity)
-        self.panel.addWidget(QLabel("BASIC / COLOR"))
-        self.adjust_sliders={}
-        for name,lo,hi in [("exposure",-2,2),("brightness",-1,1),("contrast",-1,1),("highlights",-1,1),("shadows",-1,1),("saturation",-1,1),("temperature",-1,1),("tint",-1,1),("vibrance",-1,1)]:
-            row=QHBoxLayout();row.addWidget(QLabel(name.title()));s=QSlider(Qt.Horizontal,right);s.setRange(0,1000);s.setValue(500);s.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self.set_adjustment(n,a+(b-a)*v/1000));row.addWidget(s);self.panel.addLayout(row);self.adjust_sliders[name]=s
-        self.histogram_label=QLabel("Histogram: no image");self.histogram_label.setWordWrap(True);self.panel.addWidget(self.histogram_label)
-        self.info=QLabel("Phase 5–8 workspace. Drop an image here or use File → Open.");self.info.setWordWrap(True);self.panel.addWidget(self.info)
-        self.statusBar().showMessage("Ready — Open an image to begin");self.setStyleSheet(StyleSheet.get_stylesheet())
+    def _build_looks_page(self):
+        page,lay=self._page("LOOK LIBRARY");self.look_search=QLineEdit();self.look_search.setPlaceholderText("Search looks…  A1, B2, Portrait, Film");self.look_search.textChanged.connect(self._refresh_look_cards);lay.addWidget(self.look_search)
+        cats=QScrollArea();cats.setWidgetResizable(True);cw=QWidget();cly=QHBoxLayout(cw);cly.setContentsMargins(0,0,0,0);self.category_group=QButtonGroup(self);self.category_group.setExclusive(True)
+        for cat in ["ALL"]+CATEGORIES:
+            b=QToolButton();b.setText(cat);b.setCheckable(True);b.clicked.connect(lambda _,c=cat:self._set_category(c));self.category_group.addButton(b);cly.addWidget(b)
+        cly.addStretch();cats.setWidget(cw);cats.setFixedHeight(46);lay.addWidget(cats)
+        self.look_scroll=QScrollArea();self.look_scroll.setWidgetResizable(True);self.look_container=QWidget();self.look_grid=QGridLayout(self.look_container);self.look_grid.setContentsMargins(2,2,2,2);self.look_grid.setSpacing(8);self.look_scroll.setWidget(self.look_container);lay.addWidget(self.look_scroll,1)
+        controls=QFrame();controls.setObjectName("Section");rl=QVBoxLayout(controls);self.look_name=QLabel("No look selected");self.look_name.setObjectName("Subtle");rl.addWidget(self.look_name)
+        row=QHBoxLayout();row.addWidget(QLabel("Intensity"));self.look_intensity_slider=QSlider(Qt.Horizontal);self.look_intensity_slider.setRange(0,100);self.look_intensity_slider.setValue(100);self.look_intensity_slider.valueChanged.connect(self._set_look_intensity);row.addWidget(self.look_intensity_slider);self.look_intensity_value=QLabel("100%");row.addWidget(self.look_intensity_value);rl.addLayout(row)
+        self.apply_look_btn=QPushButton("Apply Look");self.apply_look_btn.setObjectName("Primary");self.apply_look_btn.clicked.connect(self._apply_selected_look);rl.addWidget(self.apply_look_btn);lay.addWidget(controls);self.stack.addWidget(page);self._set_category("ALL")
+
+    def _build_adjust_page(self):
+        page,lay=self._page("PRO EDIT");scroll=QScrollArea();scroll.setWidgetResizable(True);inner=QWidget();il=QVBoxLayout(inner);groups=[("LIGHT",[("exposure",-2,2),("brightness",-1,1),("contrast",-1,1),("highlights",-1,1),("shadows",-1,1),("whites",-1,1),("blacks",-1,1)]),("COLOR",[("temperature",-1,1),("tint",-1,1),("vibrance",-1,1),("saturation",-1,1)]),("EFFECTS",[("clarity",-1,1),("texture",-1,1),("dehaze",-1,1),("vignette",-1,1),("grain",0,.12)])]
+        self.pro_sliders={}
+        for group,items in groups:
+            box=QFrame();box.setObjectName("Section");bl=QVBoxLayout(box);lab=QLabel(group);lab.setObjectName("SectionTitle");bl.addWidget(lab)
+            for name,lo,hi in items:
+                row=QHBoxLayout();row.addWidget(QLabel(name.title()));sl=QSlider(Qt.Horizontal);sl.setRange(0,1000);sl.setValue(500 if lo<0 else 0);sl.valueChanged.connect(lambda v,n=name,a=lo,b=hi:self._set_pro(n,a+(b-a)*v/1000));row.addWidget(sl);val=QLabel("0");val.setFixedWidth(42);row.addWidget(val);self.pro_sliders[name]=(sl,val,lo,hi);bl.addLayout(row)
+            il.addWidget(box)
+        advanced=QPushButton("RGB Curves • HSL • Color Balance • LUT");advanced.clicked.connect(self.curves_dialog);il.addWidget(advanced);il.addStretch();scroll.setWidget(inner);lay.addWidget(scroll,1);self.stack.addWidget(page)
+
+    def _build_retouch_page(self):
+        page,lay=self._page("RETOUCH & DETAIL")
+        for label,fn in [("Frequency Separation",self.frequency_separation_action),("Skin Smoothing",self.skin_smoothing_action),("Skin Tone Balance",self.skin_tone_action),("Sharpen",lambda:self.detail_action("sharpen")),("Clarity",lambda:self.detail_action("clarity")),("Denoise",lambda:self.detail_action("denoise")),("Film Grain",lambda:self.detail_action("grain"))]:
+            b=QPushButton(label);b.clicked.connect(fn);lay.addWidget(b)
+        lay.addWidget(QLabel("Brush Size"));self.size=QSlider(Qt.Horizontal,page);self.size.setRange(2,400);self.size.setValue(40);self.size.valueChanged.connect(lambda v:setattr(self,"brush_size",v));lay.addWidget(self.size);lay.addWidget(QLabel("Opacity / Flow"));self.opacity=QSlider(Qt.Horizontal,page);self.opacity.setRange(1,100);self.opacity.setValue(100);self.opacity.valueChanged.connect(lambda v:setattr(self,"brush_opacity",v/100));lay.addWidget(self.opacity);b=QPushButton("Invert Active Mask");b.clicked.connect(self.invert_mask);lay.addWidget(b);lay.addStretch();self.stack.addWidget(page)
+
+    def _build_layers_page(self):
+        page,lay=self._page("LAYERS");self.layer_list=QListWidget();self.layer_list.currentRowChanged.connect(self.select_layer);lay.addWidget(self.layer_list,1);grid=QGridLayout()
+        for i,(text,fn) in enumerate([("＋ Layer",self.add_layer),("Duplicate",self.duplicate_layer),("Delete",self.delete_layer),("↑ Up",lambda:self.move_layer(-1)),("↓ Down",lambda:self.move_layer(1)),("Add Mask",self.add_mask)]):
+            b=QPushButton(text);b.clicked.connect(fn);grid.addWidget(b,i//2,i%2)
+        lay.addLayout(grid);lay.addWidget(QLabel("Blend Mode"));self.blend=QComboBox();self.blend.addItems([x.value for x in BlendMode]);self.blend.currentTextChanged.connect(self.set_blend);lay.addWidget(self.blend);lay.addWidget(QLabel("Layer Opacity"));self.layer_opacity=QSlider(Qt.Horizontal,page);self.layer_opacity.setRange(0,100);self.layer_opacity.setValue(100);self.layer_opacity.valueChanged.connect(self.set_layer_opacity);lay.addWidget(self.layer_opacity);self.histogram_label=QLabel("Histogram • no image");self.histogram_label.setObjectName("Subtle");self.histogram_label.setWordWrap(True);lay.addWidget(self.histogram_label);self.stack.addWidget(page)
+
+    def switch_section(self,name): self.stack.setCurrentIndex({"looks":0,"adjust":1,"retouch":2,"layers":3}[name])
+    def _set_category(self,cat): self.active_category=cat;self._refresh_look_cards()
+    def _refresh_look_cards(self):
+        while self.look_grid.count():
+            item=self.look_grid.takeAt(0)
+            if item.widget():item.widget().deleteLater()
+        q=self.look_search.text().strip().lower();cat=getattr(self,"active_category","ALL");items=[x for x in LOOKS if (cat=="ALL" or x.category==cat) and (not q or q in x.name.lower() or q in x.id.lower() or q in x.category.lower())]
+        for i,look in enumerate(items):
+            card=LookCard(look);card.clicked.connect(self._select_look);self.look_grid.addWidget(card,i//2,i%2)
+        self.look_grid.setColumnStretch(0,1);self.look_grid.setColumnStretch(1,1)
+    def _select_look(self,look_id):
+        self.active_look=get_look(look_id);self.look_name.setText(f"{self.active_look.id.split('-')[-1]}  •  {self.active_look.name}");self.look_intensity_slider.setValue(round(self.look_intensity*100));self._apply_selected_look()
+    def _set_look_intensity(self,v):
+        self.look_intensity=v/100;self.look_intensity_value.setText(f"{v}%")
+        if self.active_look:self.render()
+    def _apply_selected_look(self):
+        if self.active_look:self.look_intensity=self.look_intensity_slider.value()/100;self.render();self.info.setText(f"Look applied: {self.active_look.name} • {round(self.look_intensity*100)}%")
+    def _set_pro(self,name,value):
+        self.pro_controls[name]=float(value)
+        if name in self.adjustments:self.adjustments[name]=float(value)
+        if name in self.pro_sliders:self.pro_sliders[name][1].setText(f"{value:.2f}")
+        self.render()
 
     def _menus(self):
         m=self.menuBar()
@@ -99,7 +158,7 @@ class MainWindow(QMainWindow):
     def load_image(self,p):
         try:
             self.image_data=ImageData(p);self.layers=LayerStack(self.image_data.original_image);self.undo.clear();self.cache.clear()
-            self.adjustments={k:0. for k in self.adjustments};self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
+            self.adjustments={k:0. for k in self.adjustments};self.pro_controls={k:0. for k in self.pro_controls};self.active_look=None;self.look_intensity=1.0;self.advanced={"curves_master":None,"curves_r":None,"curves_g":None,"curves_b":None,"hsl":{},"balance":None,"selective":None,"split":None,"lut":None}
             for s in self.adjust_sliders.values():
                 if isValid(s):
                     s.blockSignals(True);s.setValue(500);s.blockSignals(False)
@@ -108,10 +167,28 @@ class MainWindow(QMainWindow):
         except Exception as e:self.logger.exception("Open failed");QMessageBox.critical(self,"Open failed",str(e))
 
     def _apply_pipeline(self,image):
-        out=adjust_exposure(image,self.adjustments["exposure"]);out=adjust_brightness(out,self.adjustments["brightness"]);out=adjust_contrast(out,self.adjustments["contrast"])
-        out=adjust_highlights_shadows(out,self.adjustments["highlights"],self.adjustments["shadows"]);out=adjust_saturation(out,self.adjustments["saturation"]);out=adjust_temperature(out,self.adjustments["temperature"])
-        if self.adjustments["tint"]: out=np.clip(out+np.asarray([self.adjustments["tint"]*.12,0,-self.adjustments["tint"]*.12],np.float32),0,1)
+        out=image.copy();out=adjust_exposure(out,self.adjustments["exposure"]);out=adjust_brightness(out,self.adjustments["brightness"]);out=adjust_contrast(out,self.adjustments["contrast"]);out=adjust_highlights_shadows(out,self.adjustments["highlights"],self.adjustments["shadows"]);out=adjust_saturation(out,self.adjustments["saturation"]);out=adjust_temperature(out,self.adjustments["temperature"])
+        if self.adjustments["tint"]:out=np.clip(out+np.asarray([self.adjustments["tint"]*.12,0,-self.adjustments["tint"]*.12],np.float32),0,1)
         if self.adjustments["vibrance"]:out=apply_vibrance(out,self.adjustments["vibrance"])
+        w=self.pro_controls["whites"];b=self.pro_controls["blacks"]
+        if w:out=np.clip(out+w*np.power(np.clip(out,0,1),2)*.45,0,1)
+        if b:out=np.clip(out+b*(1-np.power(np.clip(out,0,1),2))*.35,0,1)
+        if self.pro_controls["clarity"]:out=clarity(out,self.pro_controls["clarity"],4)
+        if self.pro_controls["texture"]:out=clarity(out,self.pro_controls["texture"]*.65,1.5)
+        if self.pro_controls["dehaze"]:out=adjust_contrast(out,self.pro_controls["dehaze"]*.55)
+        if self.active_look and self.look_intensity:
+            r=self.active_look.recipe;t=self.look_intensity
+            if r.get("exposure"):out=adjust_exposure(out,r["exposure"]*t)
+            if r.get("brightness"):out=adjust_brightness(out,r["brightness"]*t)
+            if r.get("contrast"):out=adjust_contrast(out,r["contrast"]*t)
+            if r.get("highlights") or r.get("shadows"):out=adjust_highlights_shadows(out,r.get("highlights",0)*t,r.get("shadows",0)*t)
+            if r.get("saturation"):out=adjust_saturation(out,r["saturation"]*t)
+            if r.get("temperature"):out=adjust_temperature(out,r["temperature"]*t)
+            if r.get("tint"):out=np.clip(out+np.asarray([r["tint"]*.12*t,0,-r["tint"]*.12*t],np.float32),0,1)
+            if r.get("vibrance"):out=apply_vibrance(out,r["vibrance"]*t)
+        if self.pro_controls["vignette"]:
+            h,w=out.shape[:2];yy,xx=np.ogrid[:h,:w];dx=(xx-w/2)/(w/2);dy=(yy-h/2)/(h/2);v=np.clip(1-(dx*dx+dy*dy)*.55,0,1);amount=self.pro_controls["vignette"];out=np.clip(out*(1+amount*(v[...,None]-1)),0,1)
+        if self.pro_controls["grain"]:out=add_grain(out,self.pro_controls["grain"])
         a=self.advanced
         if a["curves_master"] or a["curves_r"] or a["curves_g"] or a["curves_b"]:out=apply_curves(out,a["curves_master"],a["curves_r"],a["curves_g"],a["curves_b"])
         if a["hsl"]:out=apply_hsl(out,**a["hsl"])
@@ -250,6 +327,10 @@ class MainWindow(QMainWindow):
             amount,ok=QInputDialog.getDouble(self,"Sharpen","Amount",0.7,0,3,2)
             if not ok:return
             data=sharpen(image,amount,1.0,.03);name="Detail — Sharpen"
+        elif kind=="clarity":
+            amount,ok=QInputDialog.getDouble(self,"Clarity","Amount",0.25,-1,1,2)
+            if not ok:return
+            data=clarity(image,amount,4);name="Detail — Clarity"
         elif kind=="denoise":
             amount,ok=QInputDialog.getDouble(self,"Denoise","Strength",0.25,0,1,2)
             if not ok:return
